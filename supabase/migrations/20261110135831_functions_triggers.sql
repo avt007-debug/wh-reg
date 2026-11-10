@@ -153,7 +153,6 @@ RETURNS TABLE (id uuid, sku_code text, name text, brand text, category_path text
                specification text, hsn_code text, default_gst_rate numeric, score real)
 LANGUAGE sql STABLE
 SET search_path = public, extensions, pg_temp
-SET pg_trgm.word_similarity_threshold = 0.35   -- tolerant of typos like 'spaner', 'scrwdriver'
 AS $$
   WITH q AS (SELECT app.norm(trim(p_q)) AS t),
   subtree AS (
@@ -174,7 +173,8 @@ AS $$
     -- every typed word must match (substring or fuzzy), in any order
     AND (q.t = '' OR p.search_doc LIKE '%' || q.t || '%' OR NOT EXISTS (
           SELECT 1 FROM unnest(string_to_array(q.t, ' ')) tok
-           WHERE NOT (p.search_doc LIKE '%' || tok || '%' OR tok <% p.search_doc)))
+           WHERE NOT (p.search_doc LIKE '%' || tok || '%'
+                      OR word_similarity(tok, p.search_doc) >= 0.35)))   -- typo-tolerant: 'spaner', 'scrwdriver'
   ORDER BY (upper(trim(p_q)) = p.sku_code) DESC,
            CASE WHEN q.t = '' THEN 0 ELSE greatest(similarity(p.search_doc, q.t), word_similarity(q.t, p.search_doc)) END DESC,
            p.name

@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.119.0';
 
 /** Server-side client that bypasses RLS. Prefers the new sb_secret key, falls back to legacy service_role. */
 export function adminClient(): SupabaseClient {
@@ -12,7 +12,7 @@ export function adminClient(): SupabaseClient {
 export const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*',
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS',
                'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' },
   });
 
