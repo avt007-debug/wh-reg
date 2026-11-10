@@ -1,0 +1,35 @@
+# Builds the Android app in the cloud with Expo EAS (manual trigger).
+#
+# Secrets: EXPO_TOKEN (expo.dev → Account settings → Access tokens).
+# The Supabase URL / publishable key / login domain are EAS environment
+# variables (expo.dev → project → Environment variables), not GitHub secrets.
+name: Mobile build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        type: choice
+        options: [preview, production]
+        default: preview
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wh/shared build
+      - name: Start EAS build
+        working-directory: apps/mobile
+        run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --no-wait

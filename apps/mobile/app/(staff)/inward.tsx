@@ -8,7 +8,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { Alert, Text } from 'react-native';
 import { documentTotals, formatINR, purchaseLine, type UnitPrice } from '@wh/shared';
-import { api, uploadAttachment } from '../../src/api/client';
+import { q, rpc, uploadPurchaseDoc } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { toUoms, type Me, type Party, type ProductHit } from '../../src/api/types';
 import { ItemPicker } from '../../src/components/ItemPicker';
 import { PartyPicker } from '../../src/components/PartyPicker';
@@ -23,7 +24,7 @@ interface Line { product: ProductHit; uomCode: string; qty: string; gstRate: num
 export default function Inward() {
   const t = useTheme();
   const qc = useQueryClient();
-  const slabs = useQuery({ queryKey: ['gst'], queryFn: () => api<{ rate: number }[]>('/gst-rates'), staleTime: 3600_000 });
+  const slabs = useQuery({ queryKey: ['gst'], queryFn: () => q<{ rate: number }[]>(supabase.from('gst_rates').select('rate').eq('is_active', true).order('rate')), staleTime: 3600_000 });
   const [txnId, setTxnId] = useState(newClientTxnId);
   const [vendor, setVendor] = useState<Party | null>(null);
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -33,7 +34,7 @@ export default function Inward() {
   const [lines, setLines] = useState<Line[]>([]);
   const [picking, setPicking] = useState(false);
 
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<Me>('/me') });
+  const me = useQuery({ queryKey: ['me'], queryFn: () => rpc<Me>('me') });
   const amounts = lines.map((l) => purchaseLine(Number(l.qty) || 0, l.price?.base ?? 0, l.gstRate));
   // Preview only — the server derives IGST vs CGST+SGST from the vendor GSTIN.
   const interstate = !!vendor?.state_code && !!me.data?.warehouse_state && vendor.state_code !== me.data.warehouse_state;
@@ -48,11 +49,13 @@ export default function Inward() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const attachmentKeys = photo ? [{ kind: 'LORRY_RECEIPT', storageKey: await uploadAttachment(photo.uri, photo.mime), mimeType: photo.mime }] : [];
-      return api<{ purchase: { grand_total: number } }>('/purchases', {
-        body: {
+      const attachments = photo
+        ? [{ kind: 'LORRY_RECEIPT', storagePath: await uploadPurchaseDoc(me.data!.warehouse_id!, photo.uri, photo.mime, txnId), mimeType: photo.mime }]
+        : [];
+      return rpc<{ purchase: { grand_total: number } }>('create_purchase', {
+        p: {
           clientTxnId: txnId, vendorId: vendor!.id, vendorInvoiceNo: invoiceNo.trim(), vendorInvoiceDate: invoiceDate,
-          lorryReceiptNo: lr || undefined, attachmentKeys,
+          lorryReceiptNo: lr || undefined, attachments,
           lines: lines.map((l) => ({
             productId: l.product.id, uomCode: l.uomCode, qty: Number(l.qty), gstRate: l.gstRate,
             unitBasePrice: l.price!.base, unitInclPrice: l.price!.inclusive, hsnCode: l.hsn || undefined,

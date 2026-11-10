@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { formatINR } from '@wh/shared';
-import { api } from '../../src/api/client';
+import { rpc } from '../../src/api/client';
 import { Card, Chips, HBar, Label, Screen, Stat } from '../../src/components/ui';
 import { WarehouseBars, type TrendPoint } from '../../src/components/WarehouseBars';
 import { todayIST } from '../../src/lib/ids';
@@ -11,13 +11,15 @@ const daysAgo = (n: number) => new Date(Date.now() + 5.5 * 3600_000 - n * 86400_
 
 export default function Dashboard() {
   const [g, setG] = useState<'Daily' | 'Monthly'>('Daily');
-  const range = g === 'Daily' ? { from: daysAgo(13), to: todayIST(), granularity: 'day' } : { from: `${daysAgo(365).slice(0, 7)}-01`, to: todayIST(), granularity: 'month' };
-  const qs = new URLSearchParams(range).toString();
+  const range = g === 'Daily'
+    ? { p_from: daysAgo(13), p_to: todayIST(), p_granularity: 'day' }
+    : { p_from: `${daysAgo(365).slice(0, 7)}-01`, p_to: todayIST(), p_granularity: 'month' };
+  const qs = JSON.stringify(range);
 
-  const trend = useQuery({ queryKey: ['trend', qs], queryFn: () => api<TrendPoint[]>(`/owner/sales/trend?${qs}`) });
-  const stock = useQuery({ queryKey: ['stock-overview'], queryFn: () => api<{ warehouses: { warehouse_code: string; valuation: number }[] }>('/owner/stock-overview') });
-  const top = useQuery({ queryKey: ['top', qs], queryFn: () => api<{ product_id: string; product_name: string; units_base: number; revenue_excl_gst: number; rank_by_volume: number; rank_by_revenue: number }[]>(`/owner/top-items?${qs}`) });
-  const alerts = useQuery({ queryKey: ['reorder'], queryFn: () => api<unknown[]>('/owner/reorder-alerts') });
+  const trend = useQuery({ queryKey: ['trend', qs], queryFn: () => rpc<TrendPoint[]>('owner_sales_trend', range) });
+  const stock = useQuery({ queryKey: ['stock-overview'], queryFn: () => rpc<{ warehouses: { warehouse_code: string; valuation: number }[] }>('owner_stock_overview') });
+  const top = useQuery({ queryKey: ['top', qs], queryFn: () => rpc<{ product_id: string; product_name: string; units_base: number; revenue_excl_gst: number; rank_by_volume: number; rank_by_revenue: number }[]>('owner_top_items', { p_from: range.p_from, p_to: range.p_to, p_limit: 10 }) });
+  const alerts = useQuery({ queryKey: ['reorder'], queryFn: () => rpc<unknown[]>('owner_reorder_alerts') });
 
   const codes = (stock.data?.warehouses ?? []).map((w) => w.warehouse_code);
   const points = trend.data ?? [];

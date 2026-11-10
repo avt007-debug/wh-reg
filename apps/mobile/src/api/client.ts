@@ -1,54 +1,62 @@
-import type { ApiError as ApiErrorBody, ApiErrorKey } from '@wh/shared';
-import { useAuth } from '../auth/store';
-
-const BASE = `${process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000'}/v1`;
+/**
+ * Thin typed wrappers over supabase-js. Database errors keep their SQLSTATE
+ * (WH001 insufficient stock, WH002 forbidden, WH003 PIN locked, WH005
+ * validation) and are mapped to the same ApiError codes the screens handle.
+ */
+import { ERROR_CODES, type ApiErrorKey } from '@wh/shared';
+import { supabase } from '../lib/supabase';
 
 export class ApiError extends Error {
-  constructor(public status: number, public code: ApiErrorKey, message: string, public details?: unknown) { super(message); }
+  constructor(public code: ApiErrorKey, message: string, public details?: unknown) { super(message); }
 }
 
-let refreshing: Promise<boolean> | null = null;
+interface PgErr { code?: string; message: string; details?: string | null; hint?: string | null }
 
-async function refresh(): Promise<boolean> {
-  const { refreshToken, setSession, clear } = useAuth.getState();
-  if (!refreshToken) return false;
-  const res = await fetch(`${BASE}/auth/refresh`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }),
-  });
-  if (!res.ok) { await clear(); return false; }
-  await setSession(await res.json());
-  return true;
-}
-
-/** fetch wrapper: bearer token, one transparent refresh on 401, typed errors. */
-export async function api<T>(path: string, opts: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
-  const doFetch = () => fetch(`${BASE}${path}`, {
-    method: opts.method ?? (opts.body ? 'POST' : 'GET'),
-    headers: {
-      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(opts.auth !== false && useAuth.getState().accessToken ? { Authorization: `Bearer ${useAuth.getState().accessToken}` } : {}),
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-
-  let res = await doFetch();
-  if (res.status === 401 && opts.auth !== false) {
-    refreshing ??= refresh().finally(() => { refreshing = null; });
-    if (await refreshing) res = await doFetch();
+export function toApiError(e: PgErr): ApiError {
+  if (e.code && e.code in ERROR_CODES) {
+    const k = ERROR_CODES[e.code as keyof typeof ERROR_CODES].key;
+    let details: unknown = e.details;
+    try { details = e.details ? JSON.parse(e.details) : undefined; } catch { /* plain text */ }
+    return new ApiError(k, e.message, details);
   }
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    const e = (json ?? {}) as Partial<ApiErrorBody>;
-    throw new ApiError(res.status, e.code ?? 'INTERNAL', e.message ?? `HTTP ${res.status}`, e.details);
-  }
-  return json as T;
+  if (e.code === '42501') return new ApiError('FORBIDDEN', 'You are not allowed to do this');
+  if (e.code === '23505') return new ApiError('CONFLICT', 'This entry already exists (duplicate invoice number?)');
+  if (e.code === 'PGRST301' || e.code === '401') return new ApiError('UNAUTHENTICATED', 'Please log in again');
+  if (e.code?.startsWith('23') || e.code === '22P02') return new ApiError('VALIDATION', e.message);
+  return new ApiError('INTERNAL', e.message || 'Something went wrong');
 }
 
-/** Upload a photo straight to object storage with a presigned URL. Returns the storage key. */
-export async function uploadAttachment(uri: string, mimeType: 'image/jpeg' | 'image/png' | 'image/webp') {
-  const { key, url } = await api<{ key: string; url: string }>('/purchases/attachments/presign', { body: { mimeType } });
-  const blob = await (await fetch(uri)).blob();
-  const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: blob });
-  if (!put.ok) throw new Error('Photo upload failed');
-  return key;
+/** Call a Postgres function exposed by the Supabase Data API. */
+export async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(fn, args ?? {});
+  if (error) throw toApiError(error);
+  return data as T;
+}
+
+/** Unwrap a supabase-js query builder result. */
+export async function q<T>(builder: PromiseLike<{ data: T | null; error: PgErr | null }>): Promise<T> {
+  const { data, error } = await builder;
+  if (error) throw toApiError(error);
+  return data as T;
+}
+
+/** Call an Edge Function with the signed-in user's session. */
+export async function edge<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, { body });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await (error as { context?: Response }).context?.json())?.error ?? msg; } catch { /* keep */ }
+    throw new ApiError('VALIDATION', msg);
+  }
+  return data as T;
+}
+
+/** Upload a lorry receipt / invoice photo into '<warehouseId>/<yyyy-mm>/<uuid>.jpg'. Returns the storage path. */
+export async function uploadPurchaseDoc(warehouseId: string, uri: string, mimeType: 'image/jpeg' | 'image/png' | 'image/webp', id: string) {
+  const ext = mimeType.split('/')[1];
+  const path = `${warehouseId}/${new Date().toISOString().slice(0, 7)}/${id}.${ext}`;
+  const bytes = await (await fetch(uri)).arrayBuffer();
+  const { error } = await supabase.storage.from('purchase-docs').upload(path, bytes, { contentType: mimeType, upsert: false });
+  if (error) throw new ApiError('VALIDATION', `Photo upload failed: ${error.message}`);
+  return path;
 }

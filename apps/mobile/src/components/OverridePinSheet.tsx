@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { Modal, Text, View } from 'react-native';
 import type { StockShortfall } from '@wh/shared';
-import { api, ApiError } from '../api/client';
+import { ApiError, rpc } from '../api/client';
 import { useTheme } from '../theme';
 import { Button, Card, Field, Label, Row } from './ui';
 
@@ -22,11 +22,12 @@ export function OverridePinSheet({ shortfalls, onApproved, onCancel }: {
   async function submit() {
     setBusy(true); setErr(null);
     try {
-      const r = await api<{ overrideId: string }>('/overrides', { body: { pin, reason } });
+      const r = await rpc<{ ok: boolean; overrideId?: string }>('request_stock_override', { p_pin: pin, p_reason: reason });
+      if (!r.ok || !r.overrideId) { setErr('Incorrect PIN'); return; }
       setPin(''); setReason('');
       onApproved(r.overrideId);
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : 'Could not verify PIN');
+      setErr(e instanceof ApiError && e.code === 'PIN_LOCKED' ? 'Too many wrong PINs — locked for 15 minutes' : e instanceof Error ? e.message : 'Could not verify PIN');
     } finally { setBusy(false); }
   }
 

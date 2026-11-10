@@ -1,18 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@wh/shared';
-import { api } from '../../src/api/client';
+import { rpc } from '../../src/api/client';
 import { useAuth } from '../../src/auth/store';
 import { Button, Card, Label, Row, Screen } from '../../src/components/ui';
 
 /** "My Day": the employee's own entries from today (that is all RLS returns to them). */
 export default function MyDay() {
-  const logout = useAuth((s) => s.clear);
+  const logout = useAuth((s) => s.signOut);
   const q = useQuery({
     queryKey: ['my-day'],
-    queryFn: async () => ({
-      dispatches: await api<{ id: string; invoice_no: string; customer_name: string; grand_total: number; used_override: boolean }[]>('/dispatches'),
-      purchases: await api<{ id: string; vendor_name: string; vendor_invoice_no: string; grand_total: number }[]>('/purchases'),
-    }),
+    queryFn: () => rpc<{
+      dispatches: { id: string; invoice_no: string; customer_name: string; grand_total: number; used_override: boolean }[];
+      purchases: { id: string; vendor_name: string; vendor_invoice_no: string; grand_total: number }[];
+    }>('my_day'),
   });
   return (
     <Screen>

@@ -1,32 +1,45 @@
 # WH Reg — Multi-Warehouse Inventory & Dispatch
 
-Cross-platform mobile app (Expo / React Native) + API (Fastify) + PostgreSQL for a hardware
-distributor with several warehouses: manual high-speed item search (no barcodes), carton/box/piece
-units, GST-correct inward and outward, Admin Override PIN, inter-warehouse transfer notes, an owner
-executive dashboard, and WhatsApp dispatch + end-of-day alerts.
+Expo (React Native) mobile app on a **Supabase** backend, built, tested and deployed with **GitHub Actions**.
 
-| Doc | What's inside |
+What it covers:
+- manual, typo-tolerant item search with local names (no barcodes)
+- carton/box/piece units
+- GST-correct inward and outward
+- Admin Override PIN
+- inter-warehouse transfer notes
+- an owner dashboard
+- WhatsApp dispatch alerts and an 8:30 PM digest
+
+| Doc | Inside |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram, security model (RBAC + RLS), data model, folder structure, API list, interpretations of the brief |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Step-by-step: local DB → API → app → master data → WhatsApp → production → rollout |
-| [docs/WHATSAPP.md](docs/WHATSAPP.md) | Meta setup, the two template texts to submit, webhook, retries, cost |
-| `db/migrations/*.sql` | Complete PostgreSQL DDL, triggers, RLS policies, analytics |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram, security model (roles, grants, RLS), data model, repo layout, RPC list |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | GitHub repo → local Supabase → app → production project → WhatsApp → data → release |
+| [docs/WHATSAPP.md](docs/WHATSAPP.md) | Meta setup, the two template texts, secrets, Vault, webhook, troubleshooting |
 
-## Quick start (local)
+## Quick start (local, needs Docker + Supabase CLI)
 ```bash
-cp .env.example .env
-docker compose up -d db minio
-DATABASE_URL=postgres://migrator:migrator@localhost:5432/whreg APP_API_PASSWORD=app_api_dev_password ./db/migrate.sh --seed
 pnpm install && pnpm --filter @wh/shared build
-pnpm --filter @wh/api dev            # API on :4000
-pnpm --filter @wh/api dev:worker     # WhatsApp worker (dry-run)
-EXPO_PUBLIC_API_URL=http://<your-LAN-IP>:4000 pnpm --filter @wh/mobile start
+supabase start && supabase db reset        # migrations + dev seed
+pnpm db:test                               # 90 database checks
+cp apps/mobile/.env.example apps/mobile/.env   # fill URL + publishable key from `supabase status`
+pnpm app                                   # Expo; scan QR with Expo Go
 ```
 Dev logins (password `ChangeMe@123`): `owner` (PIN `246810`), `ravi.wha` (Warehouse A), `kumar.whb` (Warehouse B).
 
-## Tests
-```bash
-ADMIN_URL=postgres://migrator:migrator@localhost:5432/postgres ./db/test.sh   # 60+ DB/RLS assertions
-pnpm test                                                                    # GST/UoM/GSTIN + WhatsApp unit tests
-API_URL=http://localhost:4000 node apps/api/scripts/smoke.mjs                # end-to-end HTTP
+## Repository
 ```
+.github/workflows/  ci.yml · deploy.yml · mobile.yml
+supabase/           config.toml · migrations/ · seed.sql · functions/ · tests/
+packages/shared/    GST, units, GSTIN, form schemas (+ tests)
+apps/mobile/        Expo Router app (staff + owner areas)
+docs/
+```
+
+## Tests
+| Command | What |
+|---|---|
+| `pnpm db:test` | migrations + seed + 90 RLS/business checks on local Supabase |
+| `pnpm db:test:plain` | same suite on any plain Postgres (`ADMIN_URL=…`), no Docker |
+| `pnpm --filter @wh/shared test` | GST / UoM / GSTIN unit tests |
+| `pnpm functions:check && pnpm functions:test` | Edge Functions type-check + unit tests (Deno) |

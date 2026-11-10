@@ -1,0 +1,56 @@
+# Runs on every pull request and push. Also reused by deploy.yml before deploying.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App & shared code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4            # version from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wh/shared build
+      - name: GST / UoM / GSTIN unit tests
+        run: pnpm --filter @wh/shared test
+      - name: Type-check mobile app
+        run: pnpm --filter @wh/mobile typecheck
+
+  functions:
+    name: Edge Functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
+      - run: deno test --config supabase/functions/deno.json --allow-env supabase/functions/tests
+
+  database:
+    name: Database (real local Supabase stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start Supabase (Postgres, Auth, Storage, REST)
+        run: supabase start -x realtime,studio,imgproxy,mailpit,logflare,vector,supavisor,edge-runtime
+      - name: Migrations + seed + RLS / business-rule tests
+        run: ./supabase/tests/run.sh --supabase
+      - name: Lint SQL functions (plpgsql_check)
+        run: supabase db lint --level error --fail-on error

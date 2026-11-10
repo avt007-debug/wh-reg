@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@wh/shared';
-import { api } from '../../src/api/client';
+import { rpc } from '../../src/api/client';
 import { useAuth } from '../../src/auth/store';
 import { Button, Card, HBar, Label, Row, Screen } from '../../src/components/ui';
 import { todayIST } from '../../src/lib/ids';
@@ -9,11 +9,12 @@ const monthStart = () => `${todayIST().slice(0, 7)}-01`;
 
 /** Margin spread, dead stock, and staff / sales-agent performance. */
 export default function Insights() {
-  const logout = useAuth((s) => s.clear);
-  const qs = `from=${monthStart()}&to=${todayIST()}`;
-  const margins = useQuery({ queryKey: ['margins', qs], queryFn: () => api<{ category: string; revenue_excl_gst: number; gross_margin: number; margin_pct: number; avg_cost_per_unit: number; avg_price_per_unit: number }[]>(`/owner/margins?${qs}`) });
-  const dead = useQuery({ queryKey: ['dead'], queryFn: () => api<{ product_id: string; warehouse_code: string; name: string; qty_on_hand: number; valuation: number; days_idle: number }[]>('/owner/dead-stock?days=45') });
-  const perf = useQuery({ queryKey: ['perf', qs], queryFn: () => api<{ staff: { user_id: string; full_name: string; warehouse_code: string; invoices: number; revenue_excl_gst: number; gross_margin: number; overrides_used: number; inward_entries: number }[]; salesAgents: { sales_agent_id: string; agent_name: string; invoices: number; revenue_excl_gst: number; customers: number }[] }>(`/owner/staff-performance?${qs}`) });
+  const logout = useAuth((s) => s.signOut);
+  const range = { p_from: monthStart(), p_to: todayIST() };
+  const qs = JSON.stringify(range);
+  const margins = useQuery({ queryKey: ['margins', qs], queryFn: () => rpc<{ category: string; revenue_excl_gst: number; gross_margin: number; margin_pct: number; avg_cost_per_unit: number; avg_price_per_unit: number }[]>('owner_margins', range) });
+  const dead = useQuery({ queryKey: ['dead'], queryFn: () => rpc<{ product_id: string; warehouse_code: string; name: string; qty_on_hand: number; valuation: number; days_idle: number }[]>('owner_dead_stock', { p_days: 45 }) });
+  const perf = useQuery({ queryKey: ['perf', qs], queryFn: () => rpc<{ staff: { user_id: string; full_name: string; warehouse_code: string; invoices: number; revenue_excl_gst: number; gross_margin: number; overrides_used: number; inward_entries: number }[]; salesAgents: { sales_agent_id: string; agent_name: string; invoices: number; revenue_excl_gst: number; customers: number }[] }>('owner_staff_performance', range) });
 
   return (
     <Screen>

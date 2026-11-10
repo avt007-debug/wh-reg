@@ -1,112 +1,126 @@
-# Implementation Roadmap — local database to production
+# Implementation Roadmap — GitHub + Supabase, from zero to go-live
 
-Each phase ends with a check you can run. Estimates assume one full-stack developer.
+Each phase ends with a check. Estimates assume one developer.
 
-> **Start Meta Business verification on day 1.** It runs in parallel and is usually the
-> slowest dependency for the WhatsApp alerts (Phase 5).
+> **Start Meta Business verification on day 1.** It runs in parallel and is usually the slowest
+> dependency (Phase 5).
 
 ---
 
-## Phase 0 — Prerequisites (½ day)
-- [ ] Install Node 22 LTS, pnpm 10 (`corepack enable`), Docker Desktop, Git.
-- [ ] An Android phone with **Expo Go** (for early testing) and USB debugging (for dev builds later).
-- [ ] Create a Meta Business account, start **business verification**, and get a dedicated phone number for WhatsApp (not one already on the WhatsApp app).
-- [ ] Decide hosting region: India (Mumbai, `ap-south-1`) keeps latency low and data in-country.
+## Phase 0 — Accounts & tools (½ day)
+- [ ] **GitHub**: create a **private** repository (e.g. `wh-reg`).
+- [ ] **Supabase**: create an organisation and a project in **Mumbai (ap-south-1)**. Save the database password.
+  - Use the Pro plan for production. Free projects pause after a week without activity, which would also pause the 8:30 PM digest.
+- [ ] **Expo**: create an account at expo.dev (cloud builds).
+- [ ] **Meta**: business.facebook.com → start **Business Verification**; get a dedicated WhatsApp number.
+- [ ] On your PC: Node 22 LTS, pnpm (`corepack enable`), Git, **Docker Desktop**, Supabase CLI (`scoop install supabase` on Windows, `brew install supabase/tap/supabase` on macOS), Deno 2.
+  - On Windows, run the `*.sh` scripts from **Git Bash** or **WSL**.
 
-## Phase 1 — Local database (1 day)
+## Phase 1 — Put the code on GitHub (½ hour)
 ```bash
-cp .env.example .env
-docker compose up -d db minio
-export DATABASE_URL=postgres://migrator:migrator@localhost:5432/whreg
-APP_API_PASSWORD=app_api_dev_password ./db/migrate.sh --seed
-ADMIN_URL=postgres://migrator:migrator@localhost:5432/postgres ./db/test.sh
+cd "WH Reg"
+git init -b main            # skip if the folder already has .git
+git add -A && git commit -m "WH Reg: Supabase + Expo scaffold"
+git remote add origin https://github.com/<you>/wh-reg.git
+git push -u origin main
 ```
-✅ **Check:** test run ends with `✓ ALL DATABASE TESTS PASSED`.
+Then in GitHub → **Settings → Secrets and variables → Actions**:
 
-Then explore as each role to build intuition:
-```sql
-SET ROLE app_employee; SELECT set_config('app.user_id','00000000-0000-0000-0000-000000000010',false);
-SELECT * FROM inventory_levels;          -- WHA only
-SELECT * FROM fin.v_stock_overview;      -- ERROR: permission denied for schema fin
-```
+| Name | Type | Value |
+|---|---|---|
+| `SUPABASE_ACCESS_TOKEN` | secret | supabase.com/dashboard/account/tokens |
+| `SUPABASE_DB_PASSWORD` | secret | the project's database password |
+| `SUPABASE_PROJECT_ID` | variable | project ref (the `xxxx` in `xxxx.supabase.co`) |
+| `EXPO_TOKEN` | secret | expo.dev → Account → Access tokens |
 
-## Phase 2 — API locally (1–2 days)
+Optionally create **Settings → Environments → `production`** with yourself as required reviewer, so every deploy waits for your click.
+
+✅ **Check:** the **CI** workflow runs green on the first push (app tests, Edge Function tests, and the full database suite on a real local Supabase stack).
+
+## Phase 2 — Local Supabase (1 day)
 ```bash
-pnpm install
-pnpm --filter @wh/shared build
-pnpm --filter @wh/api dev            # http://localhost:4000/health
-pnpm --filter @wh/api dev:worker     # WA_DRY_RUN=true logs messages instead of sending
-API_URL=http://localhost:4000 node apps/api/scripts/smoke.mjs
-pnpm test                            # shared + API unit tests
+pnpm install && pnpm --filter @wh/shared build
+supabase start                   # Postgres, Auth, Storage, REST, Studio on localhost (Docker)
+supabase db reset                # applies migrations + seed.sql
+pnpm db:test                     # → ✓ ALL DATABASE TESTS PASSED
 ```
-✅ **Check:** `✓ ALL SMOKE CHECKS PASSED`, and the worker logs a `[whatsapp:dry-run]` dispatch alert.
+Open Studio at http://127.0.0.1:54323. Explore `users`, `products` and `inventory_levels`, and
+notice there's no `fin` schema in the API docs.
 
-Create the MinIO bucket `whreg-uploads` at http://localhost:9001 (minio / minio12345).
-
-## Phase 3 — Mobile app locally (2–4 days)
+Edge Functions locally:
 ```bash
-# EXPO_PUBLIC_API_URL must be your PC's LAN IP, reachable from the phone
-EXPO_PUBLIC_API_URL=http://192.168.1.10:4000 pnpm --filter @wh/mobile start
+cp supabase/functions/.env.example supabase/functions/.env     # keep WA_DRY_RUN=true
+pnpm functions:serve
+curl -X POST http://127.0.0.1:54321/functions/v1/whatsapp-relay -H "x-relay-secret: <RELAY_SECRET>"
 ```
-- [ ] Scan the QR code with Expo Go; log in as `ravi.wha` / `ChangeMe@123`.
-- [ ] Walk through: search "pana" → outward 40 drills → see the PIN sheet → PIN `246810` → invoice saved.
-- [ ] Log in as `owner` → dashboard, reorder, purchases → add a 3% discount → net cost changes.
-- [ ] Run `pnpm --filter @wh/mobile align` after any Expo SDK upgrade.
+✅ **Check:** the relay logs `[whatsapp:dry-run]` messages for queued dispatch alerts.
 
-✅ **Check:** staff account never shows a ₹ cost; owner sees valuation, margins, staff performance.
+## Phase 3 — App against local Supabase (2–4 days)
+```bash
+cp apps/mobile/.env.example apps/mobile/.env
+#   EXPO_PUBLIC_SUPABASE_URL=http://<your-PC-LAN-IP>:54321
+#   EXPO_PUBLIC_SUPABASE_KEY=<publishable key printed by `supabase status`>
+pnpm app                         # scan the QR code with Expo Go on an Android phone
+```
+- [ ] Log in as `ravi.wha` / `ChangeMe@123`. Search "pana", then outward 40 drills. The PIN sheet appears; enter PIN `246810` and the invoice saves.
+- [ ] Log in as `owner`. Check the dashboard and reorder screens, then Purchases → add a 3% discount and watch the net cost change. On Team, create a staff login.
 
-## Phase 4 — Your real master data (1–2 weeks, mostly business-side)
-1. **Warehouses**: codes (2–4 letters, used in invoice numbers), GSTIN, state code.
-2. **Catalogue** as a spreadsheet: SKU code, name, brand, category path (`Power Tools > Drills`), specification, HSN, GST %, base unit, pack sizes (BOX = 12, CTN = 120…), list selling price, reorder level. Write a one-off CSV importer (`apps/api/scripts/import-catalog.ts`) that runs as the owner session.
-3. **Local names**: collect from floor staff the 2–3 words customers actually use per item ("pana", "pechkas", "gitti"). This decides whether search is fast or frustrating.
-4. **Photos**: one clear photo per item on a plain background. Upload, then insert `product_images`.
-5. **Parties**: vendors and dealers with GSTINs (the checksum validator catches typos).
-6. **Users**: one login per person (no shared logins, or staff performance is meaningless). Each owner sets a PIN via `PUT /v1/owner/override-pin`.
-7. **Opening stock**: do a **physical count per warehouse on a cut-over day**, then post it as `OPENING` stock adjustments. Never copy figures from old registers without counting.
+✅ **Check:** a staff login never shows a ₹ cost; owner screens show valuation, margins and staff performance.
 
-✅ **Check:** owner stock overview matches the physical count sheet line by line.
+## Phase 4 — Production Supabase project (½ day)
+1. **Deploy the backend.** Push to `main` (or run **Actions → Deploy to Supabase**). This runs CI → `supabase db push --remote` → `supabase functions deploy`.
+   - Run it once manually with **push_config = true** to apply `config.toml` (sign-ups off, 10-character passwords).
+2. **API keys:** Dashboard → Settings → API keys → use the **publishable** key in the app. The secret key stays server-side and is never in GitHub.
+3. **First owner login** (one time, SQL editor):
+   ```sql
+   -- Create the Auth user in Dashboard → Authentication → Add user:
+   --   email owner@staff.whreg.app, password <strong>, "Auto confirm" on. Then:
+   insert into public.users (id, login_id, full_name, role)
+   select id, 'owner', 'Your Name', 'OWNER' from auth.users where email = 'owner@staff.whreg.app';
+   ```
+   Every other login is created from the app's **Team** tab (`admin-users` function).
+4. **Warehouses**: insert real rows (2–4 letter codes, GSTIN, state code) in Studio.
+5. **Set your Override PIN** from Team → "My Admin Override PIN".
 
-## Phase 5 — WhatsApp integration (2–3 days + Meta review time)
-Follow [`WHATSAPP.md`](./WHATSAPP.md): register number → create the 2 **utility** templates → get approval → set env → configure webhook → turn off `WA_DRY_RUN`.
+✅ **Check:** owner can log into the production build; `select * from cron.job;` shows `whreg-eod-digest` and `whreg-whatsapp-retry`.
 
-✅ **Check:** a test dispatch produces a WhatsApp on the owner's phone within seconds; the outbox row moves `PENDING → SENT → DELIVERED`; the 8:30 PM digest arrives once (not once per server).
+## Phase 5 — WhatsApp (2–3 days + Meta review)
+Follow [`WHATSAPP.md`](./WHATSAPP.md): register the number → submit the 2 **utility** templates →
+set function secrets → create the 2 Vault secrets → set the webhook URL → `WA_DRY_RUN=false`.
 
-## Phase 6 — Hardening before go-live (1–2 weeks)
+✅ **Check:** a test dispatch sends a WhatsApp to the owner within seconds. The Team tab shows it as `SENT → DELIVERED`, and the 8:30 PM digest arrives once.
+
+## Phase 6 — Real master data (1–2 weeks, mostly business-side)
+1. **Catalogue** spreadsheet: SKU, name, brand, category path, specification, HSN, GST %, base unit, pack sizes (BOX = 12, CTN = 120…), list price, reorder level. Import CSVs with Studio's Table Editor (`brands` → `categories` → `products` → `product_uoms`).
+2. **Local names**: collect the 2–3 words customers actually use per item, and enter them as `product_aliases`. Staff can also add them later by long-pressing a search result.
+3. **Photos**: upload to the `product-images` bucket, then add `product_images` rows.
+4. **Vendors & dealers** with GSTINs (typos are caught by the checksum).
+5. **Opening stock**: do a physical count per warehouse on the cut-over day, then post it with `owner_adjust_stock(..., 'OPENING', qty)` or bulk SQL.
+
+✅ **Check:** the owner's stock overview matches the count sheets line by line.
+
+## Phase 7 — App release (2–3 days)
+1. expo.dev → project → **Environment variables** (`preview` and `production`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_KEY`, `EXPO_PUBLIC_LOGIN_EMAIL_DOMAIN`.
+2. GitHub → **Actions → Mobile build → preview**: produces an installable APK for testing phones.
+3. **production** produces an AAB for Play Console (internal testing track), or distribute the APK through your device management for company phones.
+
+## Phase 8 — Hardening & rollout (2–4 weeks)
 | Item | Why |
 |---|---|
-| Offline drafts (SQLite queue keyed by `client_txn_id`) | Warehouses often have weak signal; drafts sync when back online. Stock checks still happen on the server. |
-| Partial-receipt screen for transfer notes | API already supports per-line received quantities |
-| GST invoice PDF + share to customer WhatsApp | Printable invoice from the dispatch |
-| PO PDF to vendor from the reorder screen | Completes the one-click PO flow |
-| Owner screens for users, warehouses, reorder levels, cancellations | APIs exist; build the UI |
-| Owner entering inward/outward with a warehouse picker | API accepts `warehouseId` from owners |
-| Error monitoring (Sentry for app + API), structured logs | Know about failures before staff call you |
-| Rate limits & lockouts reviewed; dependency audit (`pnpm audit`) | Security baseline |
-| Load test: 20 concurrent dispatches of the same SKU | Confirms row-locking prevents overselling |
+| Offline drafts (SQLite queue keyed by `clientTxnId`) | weak warehouse signal. Stock is still checked on the server. |
+| Partial-receipt screen for transfers | the RPC already accepts per-line received quantities |
+| GST invoice PDF + share to customer | printable invoice |
+| PO PDF to vendor from the reorder screen | completes one-click PO |
+| Supabase **Branching** (GitHub integration) | every PR gets its own preview database |
+| Point-in-time recovery, Sentry for app + functions | operations |
+| Pilot one warehouse with paper in parallel for a week | reconcile daily before full go-live |
+| Weekly cycle counts of the top 50 SKUs → `owner_adjust_stock(..., 'ADJUST_AUDIT')` | keeps stock accurate |
 
-## Phase 7 — Production deployment (3–5 days)
-1. **Database**: managed Postgres 16 in Mumbai (e.g. AWS RDS, Azure Flexible Server, Supabase, Neon). Enable point-in-time recovery and daily snapshots; restrict network access to the API's egress.
-   - Create a `migrator` role that owns the schema; run `./db/migrate.sh` from CI with `APP_API_PASSWORD` from the secrets store. **Never run `--seed` in production.**
-   - Confirm `app_api` is NOT a superuser and has no `BYPASSRLS`: `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname='app_api';`
-2. **API + worker**: build `apps/api/Dockerfile`; deploy two services from one image (`node dist/server.js` and `node dist/jobs/worker.js`) on ECS / Cloud Run / Render / Railway / Fly. Run ≥ 2 API replicas; the worker can scale too (SKIP LOCKED + dedupe keys make it safe).
-3. **Secrets**: `JWT_SECRET` (64 random bytes), DB password, WhatsApp token & app secret, S3 keys → a secrets manager, never in the repo.
-4. **Storage**: private S3/R2 bucket in-region, lifecycle rule to move receipts > 1 year to cheaper storage.
-5. **TLS + domain**: `api.yourdomain.in` behind a load balancer; set the WhatsApp webhook to `https://api.yourdomain.in/webhooks/whatsapp`.
-6. **Mobile release**: `eas build -p android --profile production` → Play Console **internal testing** track (or direct APK via MDM for company phones) → set `EXPO_PUBLIC_API_URL` to production. Use EAS Update for JS-only fixes.
-7. **CI pipeline**: on every PR → typecheck, unit tests, `db/test.sh` against a Postgres service container, smoke test; on `main` → migrate → deploy API/worker → publish OTA update.
-
-✅ **Check:** production smoke test with a test warehouse, then delete the test data via owner cancellation.
-
-## Phase 8 — Rollout (2–3 weeks)
-1. **Pilot one warehouse** with paper running in parallel for 1 week; reconcile daily.
-2. Train staff on 3 things only: search (aliases!), outward, inward. Give each person their own login.
-3. Go live in the pilot warehouse, then the next ones a week apart.
-4. **Weekly cycle counts** of the top 50 SKUs; post differences as `ADJUST_AUDIT`.
-5. Review dead-stock and reorder screens every Monday; tune reorder levels per warehouse.
-
-## Later options
-- E-way bill & e-invoice (IRN) generation via a GSP API.
-- Batch/FIFO costing, multiple price lists per dealer tier, credit-limit blocking at dispatch.
-- Customer payment entry & receivables ageing on top of `fin.customer_payments`.
-- Web dashboard for the owner (Expo Router builds for web from the same code).
-- Barcode/QR labels printed from SKU codes if you ever want scanning later — the schema needs no change.
+## Day-to-day development loop
+```
+branch → change SQL in supabase/migrations (new file: `supabase migration new <name>`)
+       → `supabase db reset && pnpm db:test`
+       → push & open PR → CI must be green
+       → merge to main → Deploy workflow → (approve) → live on Supabase
+```
+Never edit a migration that has already been deployed. Add a new one instead.

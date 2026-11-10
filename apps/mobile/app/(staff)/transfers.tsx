@@ -6,7 +6,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert } from 'react-native';
-import { api } from '../../src/api/client';
+import { q, rpc } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { toUoms, type Me, type ProductHit, type Warehouse } from '../../src/api/types';
 import { ItemPicker } from '../../src/components/ItemPicker';
 import { QtyUomField } from '../../src/components/QtyUomField';
@@ -20,9 +21,9 @@ interface Note {
 
 export default function Transfers() {
   const qc = useQueryClient();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<Me>('/me') });
-  const whs = useQuery({ queryKey: ['warehouses'], queryFn: () => api<Warehouse[]>('/warehouses') });
-  const notes = useQuery({ queryKey: ['transfers'], queryFn: () => api<Note[]>('/transfers') });
+  const me = useQuery({ queryKey: ['me'], queryFn: () => rpc<Me>('me') });
+  const whs = useQuery({ queryKey: ['warehouses'], queryFn: () => q<Warehouse[]>(supabase.from('warehouses').select('id, code, name, state_code').order('code')) });
+  const notes = useQuery({ queryKey: ['transfers'], queryFn: () => rpc<Note[]>('list_transfers') });
 
   const [txnId, setTxnId] = useState(newClientTxnId);
   const [to, setTo] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export default function Transfers() {
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['transfers'] }); void qc.invalidateQueries({ queryKey: ['inventory'] }); };
 
   const create = useMutation({
-    mutationFn: () => api('/transfers', { body: {
+    mutationFn: () => rpc('create_transfer', { p: {
       clientTxnId: txnId, toWarehouseId: whs.data!.find((w) => w.code === to)!.id, vehicleRegNo: vehicle || undefined,
       lines: lines.map((l) => ({ productId: l.product.id, uomCode: l.uomCode, qty: Number(l.qty) })),
     } }),
@@ -40,7 +41,7 @@ export default function Transfers() {
     onError: (e) => Alert.alert('Could not create transfer', e instanceof Error ? e.message : String(e)),
   });
   const receive = useMutation({
-    mutationFn: (id: string) => api(`/transfers/${id}/receive`, { body: {} }),   // full qty; partial via line editor (roadmap)
+    mutationFn: (id: string) => rpc('receive_transfer', { p_note: id }),   // full qty; partial via p_lines (roadmap UI)
     onSuccess: () => { refresh(); Alert.alert('Received into stock'); },
   });
 

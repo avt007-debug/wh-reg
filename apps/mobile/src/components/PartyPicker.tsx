@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { api } from '../api/client';
+import { q as run } from '../api/client';
+import { supabase } from '../lib/supabase';
 import type { Party } from '../api/types';
 import { useTheme } from '../theme';
 import { Field, Label } from './ui';
@@ -12,7 +13,11 @@ export function PartyPicker({ kind, value, onChange }: { kind: 'customers' | 've
   const [q, setQ] = useState('');
   const list = useQuery({
     queryKey: [kind, q],
-    queryFn: () => api<Party[]>(`/${kind}?q=${encodeURIComponent(q)}`),
+    queryFn: () => {
+      const term = q.replace(/[,()%*]/g, ' ').trim();     // keep PostgREST filter syntax intact
+      return run<Party[]>(supabase.from(kind).select('id, name, gstin, state_code, phone').eq('is_active', true)
+        .or(`name.ilike.%${term}%,gstin.eq.${term.toUpperCase()}`).order('name').limit(30));
+    },
     enabled: !value && q.length >= 2,
   });
   const label = kind === 'customers' ? 'Customer / Dealer' : 'Vendor';

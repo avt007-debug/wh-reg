@@ -10,7 +10,8 @@ import { Alert, Text, View } from 'react-native';
 import {
   documentTotals, formatINR, saleLine, TRANSPORT_MODES, type StockShortfall,
 } from '@wh/shared';
-import { api, ApiError } from '../../src/api/client';
+import { ApiError, q, rpc } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { toUoms, type Me, type Party, type ProductHit } from '../../src/api/types';
 import { ItemPicker } from '../../src/components/ItemPicker';
 import { OverridePinSheet } from '../../src/components/OverridePinSheet';
@@ -25,8 +26,8 @@ interface Line { product: ProductHit; uomCode: string; qty: string; price: strin
 export default function Outward() {
   const t = useTheme();
   const qc = useQueryClient();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<Me>('/me') });
-  const agents = useQuery({ queryKey: ['agents'], queryFn: () => api<{ id: string; name: string }[]>('/sales-agents') });
+  const me = useQuery({ queryKey: ['me'], queryFn: () => rpc<Me>('me') });
+  const agents = useQuery({ queryKey: ['agents'], queryFn: () => q<{ id: string; name: string }[]>(supabase.from('sales_agents').select('id, name').eq('is_active', true).order('name')) });
 
   const [txnId, setTxnId] = useState(newClientTxnId);
   const [customer, setCustomer] = useState<Party | null>(null);
@@ -45,8 +46,8 @@ export default function Outward() {
   const totals = useMemo(() => documentTotals(amounts, interstate), [amounts, interstate]);
 
   const save = useMutation({
-    mutationFn: (overrideId?: string) => api<{ dispatch: { invoice_no: string; grand_total: number } }>('/dispatches', {
-      body: {
+    mutationFn: (overrideId?: string) => rpc<{ dispatch: { invoice_no: string; grand_total: number } }>('create_dispatch', {
+      p: {
         clientTxnId: txnId, customerId: customer!.id, salesAgentId: agentId ?? undefined,
         transportMode: mode, transporterName: transporter || undefined,
         vehicleRegNo: vehicle || undefined, driverPhone: driver || undefined, overrideId,
@@ -55,7 +56,7 @@ export default function Outward() {
           unitBasePrice: Number(l.price), discountPct: Number(l.discountPct) || 0,
         })),
       },
-    }),
+    }),   // server pins the warehouse, sets invoice no./date, GST split, and queues the WhatsApp alert
     onSuccess: (r) => {
       setShortfalls(null);
       Alert.alert('Dispatched', `${r.dispatch.invoice_no} · ${formatINR(r.dispatch.grand_total)}`);

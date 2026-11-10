@@ -12,7 +12,7 @@ export interface ProductHit {
   default_selling_price: number | null;
   mrp: number | null;
   qty_on_hand: number;
-  image_url: string | null;
+  image_path: string | null;      // product-images bucket (public)
   aliases: string[] | null;
   uoms: { code: string; factor: number; displayName: string }[];
 }

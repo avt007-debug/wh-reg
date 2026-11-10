@@ -1,38 +1,50 @@
-import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import type { Role } from '@wh/shared';
+import type { Me } from '../api/types';
+import { rpc } from '../api/client';
+import { loginEmail, supabase } from '../lib/supabase';
 
 export interface SessionUser { id: string; fullName: string; role: Role; warehouseId: string | null }
 
 interface AuthState {
   user: SessionUser | null;
-  accessToken: string | null;
-  refreshToken: string | null;
   hydrated: boolean;
-  setSession: (s: { user: SessionUser; accessToken: string; refreshToken: string }) => Promise<void>;
-  clear: () => Promise<void>;
+  /** Supabase Auth keeps the session (encrypted on device); we load the staff profile via me(). */
   hydrate: () => Promise<void>;
+  signIn: (loginId: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
-const KEY = 'whreg.session.v1';
+async function loadProfile(): Promise<SessionUser | null> {
+  const me = await rpc<Me | null>('me');
+  if (!me) return null;                     // auth user exists but no active staff profile
+  return { id: me.id, fullName: me.full_name, role: me.role as Role, warehouseId: me.warehouse_id };
+}
 
-/** Tokens live in the OS keystore (Keychain / Android Keystore), never AsyncStorage. */
 export const useAuth = create<AuthState>((set) => ({
   user: null,
-  accessToken: null,
-  refreshToken: null,
   hydrated: false,
-  async setSession(s) {
-    await SecureStore.setItemAsync(KEY, JSON.stringify(s));
-    set({ ...s });
-  },
-  async clear() {
-    await SecureStore.deleteItemAsync(KEY);
-    set({ user: null, accessToken: null, refreshToken: null });
-  },
   async hydrate() {
-    const raw = await SecureStore.getItemAsync(KEY);
-    set({ ...(raw ? JSON.parse(raw) : {}), hydrated: true });
+    const { data } = await supabase.auth.getSession();
+    const user = data.session ? await loadProfile().catch(() => null) : null;
+    set({ user, hydrated: true });
+    supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') set({ user: null });
+    });
+  },
+  async signIn(loginId, password) {
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail(loginId), password });
+    if (error) throw new Error(error.status === 400 ? 'Invalid User ID or password' : error.message);
+    const user = await loadProfile();
+    if (!user) {
+      await supabase.auth.signOut();
+      throw new Error('This login is disabled. Contact the owner.');
+    }
+    set({ user });
+  },
+  async signOut() {
+    await supabase.auth.signOut();
+    set({ user: null });
   },
 }));
 

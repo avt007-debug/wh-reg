@@ -11,7 +11,8 @@ import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { formatBreakdown } from '@wh/shared';
-import { api } from '../api/client';
+import { rpc } from '../api/client';
+import { productImageUrl } from '../lib/supabase';
 import { toUoms, type ProductHit } from '../api/types';
 import { useTheme } from '../theme';
 import { Button, Chips, Label } from './ui';
@@ -33,25 +34,22 @@ export function ItemPicker({ visible, onClose, onPick }: { visible: boolean; onC
 
   const tree = useQuery({
     queryKey: ['catalog-tree'],
-    queryFn: () => api<{ brands: { id: string; name: string }[]; categories: Category[] }>('/catalog/tree'),
+    queryFn: () => rpc<{ brands: { id: string; name: string }[]; categories: Category[] }>('catalog_tree'),
     staleTime: 10 * 60_000,
   });
   const children = useMemo(
     () => (tree.data?.categories ?? []).filter((c) => c.parent_id === (cat?.id ?? null)),
     [tree.data, cat]);
 
-  const params = new URLSearchParams({ q: dq, limit: '40' });
-  if (brandId) params.set('brandId', brandId);
-  if (cat) params.set('categoryId', cat.id);
   const results = useQuery({
     queryKey: ['search', dq, brandId, cat?.id],
-    queryFn: () => api<ProductHit[]>(`/products/search?${params}`),
+    queryFn: () => rpc<ProductHit[]>('search_items', { q: dq, lim: 40, brand_id: brandId, category_id: cat?.id ?? null }),
     enabled: visible && (dq.length >= 2 || !!brandId || !!cat),
   });
 
   const addAlias = (p: ProductHit) =>
     Alert.prompt?.('Add local name', `What do customers call "${p.name}"?`, async (alias) => {
-      if (alias?.trim()) await api(`/products/${p.id}/aliases`, { body: { alias: alias.trim() } });
+      if (alias?.trim()) await rpc('add_product_alias', { p_product: p.id, p_alias: alias.trim() });
     });
 
   const brands = tree.data?.brands ?? [];
@@ -82,7 +80,7 @@ export function ItemPicker({ visible, onClose, onPick }: { visible: boolean; onC
           renderItem={({ item: p }) => (
             <Pressable onPress={() => { onPick(p); setQ(''); onClose(); }} onLongPress={() => addAlias(p)}
               style={{ flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderColor: t.border }}>
-              <Image source={p.image_url ? { uri: p.image_url } : undefined} contentFit="cover"
+              <Image source={p.image_path ? { uri: productImageUrl(p.image_path)! } : undefined} contentFit="cover"
                 style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: t.border }} />
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{p.name}</Text>

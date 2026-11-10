@@ -10,11 +10,11 @@ const queryClient = new QueryClient({
 
 /**
  * Role gate. NOTE: this only decides which screens are shown — it is NOT the
- * security boundary. The API (JWT role check) and Postgres (GRANTs + RLS) refuse
- * owner data to employees regardless of what the app renders.
+ * security boundary. Supabase RLS + the owner_* RPC checks refuse owner data to
+ * employees regardless of what the app renders.
  */
 function Gate() {
-  const { user, hydrated, hydrate } = useAuth();
+  const { user, hydrated, hydrate } = useAuth();       // session from Supabase Auth
   const seg = useSegments();
   useEffect(() => { void hydrate(); }, [hydrate]);
 

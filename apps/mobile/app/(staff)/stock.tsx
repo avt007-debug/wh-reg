@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatBreakdown } from '@wh/shared';
-import { api } from '../../src/api/client';
+import { rpc } from '../../src/api/client';
 import { Card, Chips, Field, Label, Row, Screen } from '../../src/components/ui';
 
 interface StockRow {
@@ -13,7 +13,7 @@ interface StockRow {
 export default function Stock() {
   const [filter, setFilter] = useState<'All' | 'Low'>('All');
   const [q, setQ] = useState('');
-  const inv = useQuery({ queryKey: ['inventory', filter], queryFn: () => api<StockRow[]>(`/inventory?lowOnly=${filter === 'Low'}`) });
+  const inv = useQuery({ queryKey: ['inventory', filter], queryFn: () => rpc<StockRow[]>('stock_list', { p_low_only: filter === 'Low' }) });
   const rows = (inv.data ?? []).filter((r) => !q || `${r.name} ${r.sku_code} ${r.brand ?? ''}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <Screen>

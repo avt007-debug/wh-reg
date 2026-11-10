@@ -1,15 +1,19 @@
 {
   "name": "wh-reg",
   "private": true,
-  "packageManager": "pnpm@10.0.0",
+  "packageManager": "pnpm@10.34.9",
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "db:migrate": "./db/migrate.sh",
-    "db:seed": "./db/migrate.sh --seed",
-    "db:test": "./db/test.sh"
+    "app": "pnpm --filter @wh/mobile start",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "db:test": "./supabase/tests/run.sh --supabase",
+    "db:test:plain": "./supabase/tests/run.sh --plain",
+    "functions:check": "deno check --config supabase/functions/deno.json supabase/functions/*/index.ts",
+    "functions:test": "deno test --config supabase/functions/deno.json --allow-env supabase/functions/tests",
+    "functions:serve": "supabase functions serve --env-file supabase/functions/.env"
   },
   "devDependencies": {
     "turbo": "^2.11.10",

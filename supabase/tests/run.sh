@@ -13,7 +13,7 @@ clean() { sed -E 's/^psql:[^:]*:[0-9]*: //'; }
 
 case "${1:-}" in
   --supabase)
-    (cd "$DIR/.." && supabase db reset --local)
+    (cd "$DIR/.." && supabase db reset)
     DB_URL="${SUPABASE_DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"
     psql "$DB_URL" -X -v ON_ERROR_STOP=1 -f "$TEST" 2>&1 | clean
     ;;

@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Modal, View } from 'react-native';
 import { formatINR } from '@wh/shared';
-import { api } from '../../src/api/client';
+import { rpc } from '../../src/api/client';
 import { Button, Card, Chips, Field, Label, Row, Screen } from '../../src/components/ui';
 import { todayIST } from '../../src/lib/ids';
 import { useTheme } from '../../src/theme';
@@ -22,14 +22,14 @@ export default function OwnerPurchases() {
   const t = useTheme();
   const qc = useQueryClient();
   const from = `${todayIST().slice(0, 7)}-01`;
-  const q = useQuery({ queryKey: ['purchases-net', from], queryFn: () => api<NetRow[]>(`/owner/purchases/net?from=${from}&to=${todayIST()}`) });
+  const q = useQuery({ queryKey: ['purchases-net', from], queryFn: () => rpc<NetRow[]>('owner_purchases_net', { p_from: from, p_to: todayIST() }) });
   const [edit, setEdit] = useState<NetRow | null>(null);
   const [type, setType] = useState<'PERCENT' | 'AMOUNT'>('PERCENT');
   const [value, setValue] = useState('');
   const [reason, setReason] = useState('');
 
   const save = useMutation({
-    mutationFn: () => api(`/owner/purchases/${edit!.purchase_id}/discount`, { method: 'PUT', body: { discountType: type, discountValue: Number(value), reason: reason || undefined } }),
+    mutationFn: () => rpc('owner_set_purchase_discount', { p_purchase: edit!.purchase_id, p_type: type, p_value: Number(value), p_reason: reason || null }),
     onSuccess: () => { setEdit(null); void qc.invalidateQueries({ queryKey: ['purchases-net'] }); void qc.invalidateQueries({ queryKey: ['stock-overview'] }); },
   });
 

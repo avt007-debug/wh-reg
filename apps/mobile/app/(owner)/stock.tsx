@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatINR } from '@wh/shared';
-import { api } from '../../src/api/client';
+import { rpc } from '../../src/api/client';
 import { Card, Field, Row, Screen } from '../../src/components/ui';
 
 interface Overview {
@@ -12,7 +12,7 @@ interface Overview {
 /** Multi-warehouse stock with valuation at (net) purchase cost. */
 export default function OwnerStock() {
   const [q, setQ] = useState('');
-  const o = useQuery({ queryKey: ['stock-overview'], queryFn: () => api<Overview>('/owner/stock-overview') });
+  const o = useQuery({ queryKey: ['stock-overview'], queryFn: () => rpc<Overview>('owner_stock_overview') });
   const items = (o.data?.items ?? []).filter((i) => !q || `${i.name} ${i.sku} ${i.brand ?? ''}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <Screen>

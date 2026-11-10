@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 import { formatINR } from '@wh/shared';
-import { api } from '../../src/api/client';
+import { rpc } from '../../src/api/client';
 import { Button, Card, Label, Screen } from '../../src/components/ui';
 import { useTheme } from '../../src/theme';
 
@@ -16,7 +16,7 @@ interface Alert_ {
 export default function Reorder() {
   const t = useTheme();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ['reorder'], queryFn: () => api<Alert_[]>('/owner/reorder-alerts') });
+  const q = useQuery({ queryKey: ['reorder'], queryFn: () => rpc<Alert_[]>('owner_reorder_alerts') });
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const key = (a: Alert_) => `${a.warehouse_id}:${a.product_id}`;
 
@@ -27,7 +27,7 @@ export default function Reorder() {
       chosen.forEach((a) => byWh.set(a.warehouse_id, [...(byWh.get(a.warehouse_id) ?? []), a.product_id]));
       let n = 0;
       for (const [warehouseId, productIds] of byWh) {
-        n += (await api<{ purchaseOrderIds: string[] }>('/owner/reorder-alerts/purchase-orders', { body: { warehouseId, productIds } })).purchaseOrderIds.length;
+        n += (await rpc<{ purchaseOrderIds: string[] }>('owner_create_purchase_orders', { p_warehouse: warehouseId, p_products: productIds })).purchaseOrderIds.length;
       }
       return n;
     },
