@@ -8,13 +8,16 @@ import { View } from 'react-native';
 import { formatINR, fromBase, fromInclusive, type UnitPrice } from '@wh/shared';
 import { Chips, Field, Label } from './ui';
 
-export function PriceGstField({ gstRate, slabs, onRateChange, value, onChange, unitLabel }: {
+export function PriceGstField({ gstRate, slabs, onRateChange, value, onChange, unitLabel, baseLabel, inclLabel }: {
   gstRate: number;
   slabs: number[];
   onRateChange: (r: number) => void;
   value: UnitPrice | null;
   onChange: (p: UnitPrice | null) => void;
   unitLabel: string;
+  /** override the field captions, e.g. "Price before GST" / "MRP (incl. GST)" */
+  baseLabel?: string;
+  inclLabel?: string;
 }) {
   const [baseText, setBaseText] = useState(value ? String(value.base) : '');
   const [inclText, setInclText] = useState(value ? value.inclusive.toFixed(2) : '');
@@ -46,8 +49,8 @@ export function PriceGstField({ gstRate, slabs, onRateChange, value, onChange, u
       <Label>GST slab</Label>
       <Chips options={slabs} value={gstRate} onChange={onRateChange} format={(r) => `${r}%`} />
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <Field label={`Base / ${unitLabel} (excl. GST)`} keyboardType="decimal-pad" value={baseText} onChangeText={onBase} placeholder="0.00" />
-        <Field label={`Inclusive / ${unitLabel}`} keyboardType="decimal-pad" value={inclText} onChangeText={onIncl} placeholder="0.00" />
+        <Field label={baseLabel ?? `Base / ${unitLabel} (excl. GST)`} keyboardType="decimal-pad" value={baseText} onChangeText={onBase} placeholder="0.00" />
+        <Field label={inclLabel ?? `Inclusive / ${unitLabel}`} keyboardType="decimal-pad" value={inclText} onChangeText={onIncl} placeholder="0.00" />
       </View>
       {value ? <Label muted>GST per {unitLabel}: {formatINR(value.tax)}</Label> : null}
     </View>

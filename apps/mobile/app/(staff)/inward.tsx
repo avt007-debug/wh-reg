@@ -65,7 +65,7 @@ export default function Inward() {
       });
     },
     onSuccess: (r) => {
-      notify('Goods received', `Landed cost ${formatINR(r.purchase.grand_total)}`);
+      notify('Sent to the owner for approval', `Invoice total ${formatINR(r.purchase.grand_total)}. The stock is added once the owner approves it.`);
       setTxnId(newClientTxnId()); setLines([]); setVendor(null); setInvoiceNo(''); setLr(''); setPhoto(null);
       void qc.invalidateQueries({ queryKey: ['inventory'] });
       void qc.invalidateQueries({ queryKey: ['my-day'] });

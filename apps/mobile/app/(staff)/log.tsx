@@ -11,7 +11,7 @@ export default function MyDay() {
     queryKey: ['my-day'],
     queryFn: () => rpc<{
       dispatches: { id: string; invoice_no: string; customer_name: string; grand_total: number; used_override: boolean }[];
-      purchases: { id: string; vendor_name: string; vendor_invoice_no: string; grand_total: number }[];
+      purchases: { id: string; vendor_name: string; vendor_invoice_no: string; grand_total: number; status: string }[];
     }>('my_day'),
   });
   return (
@@ -22,7 +22,8 @@ export default function MyDay() {
         ))}
       </Card>
       <Card title={`Inward today (${q.data?.purchases.length ?? 0})`}>
-        {q.data?.purchases.map((p) => <Row key={p.id} left={p.vendor_name} sub={p.vendor_invoice_no} right={formatINR(p.grand_total)} />)}
+        {q.data?.purchases.map((p) => <Row key={p.id} left={p.vendor_name} right={formatINR(p.grand_total)}
+          sub={`${p.vendor_invoice_no} · ${p.status === 'PENDING' ? '⏳ waiting for owner approval' : p.status === 'POSTED' ? '✓ approved, added to stock' : '✕ rejected'}`} />)}
       </Card>
       <Label muted>Entries are locked once saved. Ask the owner to cancel a wrong entry, then re-enter it.</Label>
       <Button title="Log out" kind="secondary" onPress={() => void logout()} />

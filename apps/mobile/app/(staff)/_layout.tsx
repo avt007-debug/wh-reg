@@ -11,6 +11,7 @@ export default function StaffLayout() {
       <Tabs.Screen name="outward" options={{ title: 'Outward', tabBarIcon: ({ color, size }) => <Ionicons name="arrow-up-circle" color={color as string} size={size} /> }} />
       <Tabs.Screen name="inward" options={{ title: 'Inward', tabBarIcon: ({ color, size }) => <Ionicons name="arrow-down-circle" color={color as string} size={size} /> }} />
       <Tabs.Screen name="transfers" options={{ title: 'Transfers', tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal" color={color as string} size={size} /> }} />
+      <Tabs.Screen name="work" options={{ title: 'Clock & Visits', tabBarIcon: ({ color, size }) => <Ionicons name="time" color={color as string} size={size} /> }} />
       <Tabs.Screen name="log" options={{ title: 'My Day', tabBarIcon: ({ color, size }) => <Ionicons name="today" color={color as string} size={size} /> }} />
     </Tabs>
   );

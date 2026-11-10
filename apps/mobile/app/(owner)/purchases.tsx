@@ -7,9 +7,11 @@
  *   • extra discount the owner received, per item and/or per bill — owner only;
  *     staff have no screen, table or API that shows these numbers
  *   • export the month to Excel
+ *   • purchases entered by staff wait here for approval; stock is added only
+ *     when the owner approves
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { formatINR, fromBase, type UnitPrice } from '@wh/shared';
 import { q, rpc } from '../../src/api/client';
@@ -18,8 +20,8 @@ import { ItemPicker } from '../../src/components/ItemPicker';
 import { PriceGstField } from '../../src/components/PriceGstField';
 import { Button, Card, Chips, Field, Label, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
-import { dmy, monthLong, monthStart } from '../../src/lib/dates';
-import { notify } from '../../src/lib/dialogs';
+import { dateTimeIST, dmy, monthLong, monthStart } from '../../src/lib/dates';
+import { askText, notify } from '../../src/lib/dialogs';
 import { exportXlsx } from '../../src/lib/exportFile';
 import { supabase } from '../../src/lib/supabase';
 import { fileStamp, useOwnerWarehouse } from '../../src/lib/warehouse';
@@ -37,6 +39,8 @@ interface Purchase {
   freight_amount: number; taxable_total: number; tax_total: number; grand_total: number;
   bill_discount_type: DiscType | null; bill_discount_value: number | null; bill_discount_reason: string | null; bill_discount_amount: number;
   total_discount: number; net_taxable: number; net_payable: number; lines: Line[];
+  status: 'PENDING' | 'POSTED' | 'CANCELLED'; entered_by: string; entered_by_role: string; entered_at: string;
+  approved_by: string | null; approved_at: string | null;
 }
 
 const n = (x: unknown) => Number(x ?? 0);
@@ -51,17 +55,36 @@ export default function OwnerPurchases() {
   const [edit, setEdit] = useState<Purchase | null>(null);
   const month = monthStart(back);
 
+  const qc = useQueryClient();
   const list = useQuery({
     queryKey: ['purchases-month', month, wh],
     queryFn: () => rpc<Purchase[]>('owner_purchases_month', { p_month: month, p_warehouse: wh }),
   });
+  const pending = useQuery({ queryKey: ['pending-purchases'], queryFn: () => rpc<Purchase[]>('owner_pending_purchases') });
+  const pendingRows = (pending.data ?? []).filter((p) => !wh || p.warehouse_id === wh);
+  const refreshAll = () => {
+    for (const k of ['purchases-month', 'pending-purchases', 'stock-overview', 'owner-stock', 'reorder']) void qc.invalidateQueries({ queryKey: [k] });
+  };
+  const approve = useMutation({
+    mutationFn: (p: Purchase) => rpc<Purchase>('owner_approve_purchase', { p_id: p.id }),
+    onSuccess: (p) => { refreshAll(); notify('Approved', `Invoice ${p.vendor_invoice_no}: ${p.lines.length} item(s) added to ${p.warehouse_name} stock.`); },
+    onError: (e) => notify('Not approved', e instanceof Error ? e.message : String(e)),
+  });
+  const reject = async (p: Purchase) => {
+    const reason = (await askText(`Reject invoice ${p.vendor_invoice_no}?`, `Entered by ${p.entered_by}. Nothing is added to stock. Reason:`))?.trim();
+    if (!reason) return;
+    rpc('owner_reject_purchase', { p_id: p.id, p_reason: reason }).then(() => { refreshAll(); notify('Rejected'); },
+      (e) => notify('Not rejected', e instanceof Error ? e.message : String(e)));
+  };
 
   const needle = search.trim().toLowerCase();
-  const rows = (list.data ?? []).filter((p) => !needle
+  // pending ones are shown in the approval box above, not twice
+  const rows = (list.data ?? []).filter((p) => p.status !== 'PENDING').filter((p) => !needle
     || `${p.vendor_invoice_no} ${p.vendor_name} ${p.lines.map((l) => `${l.sku_code} ${l.name}`).join(' ')}`.toLowerCase().includes(needle));
-  const billed = rows.reduce((a, p) => a + n(p.grand_total), 0);
-  const disc = rows.reduce((a, p) => a + n(p.total_discount), 0);
-  const net = rows.reduce((a, p) => a + n(p.net_payable), 0);
+  const approved = rows.filter((p) => p.status === 'POSTED');
+  const billed = approved.reduce((a, p) => a + n(p.grand_total), 0);
+  const disc = approved.reduce((a, p) => a + n(p.total_discount), 0);
+  const net = approved.reduce((a, p) => a + n(p.net_payable), 0);
 
   const doExport = () => exportXlsx(`Purchases_${month.slice(0, 7)}_${whName.replace(/\s+/g, '-')}_${fileStamp()}`, [
     {
@@ -72,11 +95,13 @@ export default function OwnerPurchases() {
         { header: 'Items', kind: 'number', width: 8 }, { header: 'Taxable', kind: 'money', width: 14 }, { header: 'GST', kind: 'money', width: 12 },
         { header: 'Freight', kind: 'money', width: 12 }, { header: 'Billed total', kind: 'money', width: 14 },
         { header: 'Bill discount', width: 14 }, { header: 'Total extra discount', kind: 'money', width: 18 }, { header: 'Net payable', kind: 'money', width: 14 },
+        { header: 'Status', width: 12 }, { header: 'Entered by', width: 22 }, { header: 'Approved by', width: 18 },
       ],
       rows: rows.map((p) => [
         p.vendor_invoice_date, p.vendor_invoice_no, p.vendor_name, p.vendor_gstin, p.warehouse_name, p.lorry_receipt_no,
         p.lines.length, n(p.taxable_total), n(p.tax_total), n(p.freight_amount), n(p.grand_total),
         discLabel(p.bill_discount_type, p.bill_discount_value), n(p.total_discount), n(p.net_payable),
+        p.status === 'PENDING' ? 'Waiting' : 'Approved', p.entered_by, p.approved_by,
       ]),
     },
     {
@@ -107,7 +132,20 @@ export default function OwnerPurchases() {
         <SmallButton title="Next ›" onPress={() => setBack((b) => Math.max(0, b - 1))} disabled={back === 0} />
       </View>
 
-      <Card title={`${whName} · ${rows.length} invoice(s)`}>
+      {pendingRows.length ? (
+        <Card title={`⏳ Waiting for your approval (${pendingRows.length})`}>
+          <Label muted>Entered by staff. Stock is added only after you approve. You can edit before approving.</Label>
+          {pendingRows.map((p) => (
+            <InvoiceCard key={p.id} p={p} onEdit={() => setEdit(p)} actions={
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                <SmallButton title="✓ Approve & add to stock" kind="primary" onPress={() => approve.mutate(p)} disabled={approve.isPending} />
+                <SmallButton title="✕ Reject" kind="danger" onPress={() => void reject(p)} />
+              </View>} />
+          ))}
+        </Card>
+      ) : null}
+
+      <Card title={`${whName} · ${approved.length} approved invoice(s)`}>
         <Row left="Billed (incl. GST + freight)" right={formatINR(billed)} />
         <Row left="Your extra discounts" right={formatINR(disc)} sub="per-item + per-bill · only you can see this" />
         <Row left="Net payable after discount" right={formatINR(net)} />
@@ -118,45 +156,57 @@ export default function OwnerPurchases() {
         <SmallButton icon="⬇" title="Export month to Excel" onPress={doExport} disabled={!rows.length} />
       </Toolbar>
 
-      {rows.map((p) => (
-        <Card key={p.id}>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>Invoice {p.vendor_invoice_no}</Text>
-              <Label>{dmy(p.vendor_invoice_date)} · {p.vendor_name} · {p.warehouse_name}{p.lorry_receipt_no ? ` · LR ${p.lorry_receipt_no}` : ''}</Label>
-            </View>
-            <SmallButton title="Edit" onPress={() => setEdit(p)} />
-          </View>
-
-          {p.lines.map((l) => (
-            <View key={l.id} style={{ flexDirection: 'row', gap: 8, paddingVertical: 6, borderBottomWidth: 0.5, borderColor: t.border }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: t.text }}>{l.name}</Text>
-                <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                  {l.sku_code} · {n(l.qty)} {l.uom} × {formatINR(n(l.unit_base_price))} + {n(l.gst_rate)}% GST
-                </Text>
-                {n(l.item_discount_amount) > 0 ? (
-                  <Text style={{ color: t.good, fontSize: 12 }}>
-                    Extra discount {discLabel(l.item_discount_type, l.item_discount_value)} = −{formatINR(n(l.item_discount_amount))}
-                  </Text>
-                ) : null}
-              </View>
-              <Text style={{ color: t.text, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{formatINR(n(l.line_total))}</Text>
-            </View>
-          ))}
-
-          <Row left="Billed total" right={formatINR(n(p.grand_total))}
-            sub={`taxable ${formatINR(n(p.taxable_total))} · GST ${formatINR(n(p.tax_total))}${n(p.freight_amount) ? ` · freight ${formatINR(n(p.freight_amount))}` : ''}`} />
-          {n(p.total_discount) > 0 ? (
-            <Row left="Net after your discounts" right={formatINR(n(p.net_payable))}
-              sub={`−${formatINR(n(p.total_discount))}${n(p.bill_discount_amount) ? ` (bill ${discLabel(p.bill_discount_type, p.bill_discount_value)})` : ''}`} />
-          ) : <Label muted>No extra discount recorded · tap Edit to add one</Label>}
-        </Card>
-      ))}
+      {rows.map((p) => <InvoiceCard key={p.id} p={p} onEdit={() => setEdit(p)} />)}
       {!rows.length ? <Label muted>{list.isLoading ? 'Loading…' : `No purchases in ${monthLong(month)}`}</Label> : null}
 
       <PurchaseEditor purchase={edit} onClose={() => setEdit(null)} />
     </Screen>
+  );
+}
+
+function InvoiceCard({ p, onEdit, actions }: { p: Purchase; onEdit: () => void; actions?: ReactNode }) {
+  const t = useTheme();
+  return (
+    <Card>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>
+            Invoice {p.vendor_invoice_no}{p.status === 'PENDING' ? '  ·  ⏳ waiting for approval' : ''}
+          </Text>
+          <Label>{dmy(p.vendor_invoice_date)} · {p.vendor_name} · {p.warehouse_name}{p.lorry_receipt_no ? ` · LR ${p.lorry_receipt_no}` : ''}</Label>
+          <Text style={{ color: t.textSecondary, fontSize: 12 }}>
+            Entered by {p.entered_by} · {dateTimeIST(p.entered_at)}
+            {p.status === 'POSTED' && p.approved_by && p.entered_by_role === 'EMPLOYEE' ? ` · approved by ${p.approved_by} ${dateTimeIST(p.approved_at)}` : ''}
+          </Text>
+        </View>
+        <SmallButton title="Edit" onPress={onEdit} />
+      </View>
+
+      {p.lines.map((l) => (
+        <View key={l.id} style={{ flexDirection: 'row', gap: 8, paddingVertical: 6, borderBottomWidth: 0.5, borderColor: t.border }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text }}>{l.name}</Text>
+            <Text style={{ color: t.textMuted, fontSize: 12 }}>
+              {l.sku_code} · {n(l.qty)} {l.uom} × {formatINR(n(l.unit_base_price))} + {n(l.gst_rate)}% GST
+            </Text>
+            {n(l.item_discount_amount) > 0 ? (
+              <Text style={{ color: t.good, fontSize: 12 }}>
+                Extra discount {discLabel(l.item_discount_type, l.item_discount_value)} = −{formatINR(n(l.item_discount_amount))}
+              </Text>
+            ) : null}
+          </View>
+          <Text style={{ color: t.text, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{formatINR(n(l.line_total))}</Text>
+        </View>
+      ))}
+
+      <Row left="Billed total" right={formatINR(n(p.grand_total))}
+        sub={`taxable ${formatINR(n(p.taxable_total))} · GST ${formatINR(n(p.tax_total))}${n(p.freight_amount) ? ` · freight ${formatINR(n(p.freight_amount))}` : ''}`} />
+      {n(p.total_discount) > 0 ? (
+        <Row left="Net after your discounts" right={formatINR(n(p.net_payable))}
+          sub={`−${formatINR(n(p.total_discount))}${n(p.bill_discount_amount) ? ` (bill ${discLabel(p.bill_discount_type, p.bill_discount_value)})` : ''}`} />
+      ) : <Label muted>No extra discount recorded · tap Edit to add one</Label>}
+      {actions}
+    </Card>
   );
 }
 
@@ -271,8 +321,8 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
       }
     },
     onSuccess: () => {
-      for (const k of ['purchases-month', 'purchases-net', 'stock-overview', 'owner-stock', 'reorder']) void qc.invalidateQueries({ queryKey: [k] });
-      notify('Purchase saved', structural ? 'Items changed — stock has been updated.' : undefined);
+      for (const k of ['purchases-month', 'pending-purchases', 'purchases-net', 'stock-overview', 'owner-stock', 'reorder']) void qc.invalidateQueries({ queryKey: [k] });
+      notify('Purchase saved', structural && p?.status === 'POSTED' ? 'Items changed — stock has been updated.' : undefined);
       onClose();
     },
     onError: (e) => notify('Not saved', e instanceof Error ? e.message : String(e)),

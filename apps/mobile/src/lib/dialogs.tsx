@@ -13,6 +13,15 @@ export function notify(title: string, message?: string) {
   else Alert.alert(title, message);
 }
 
+/** Yes/No question. Resolves true when confirmed. */
+export function confirmAsk(title: string, message?: string, okLabel = 'OK'): Promise<boolean> {
+  if (Platform.OS === 'web') return Promise.resolve(window.confirm(message ? `${title}\n\n${message}` : title));
+  return new Promise((resolve) => Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+    { text: okLabel, style: 'destructive', onPress: () => resolve(true) },
+  ], { cancelable: true, onDismiss: () => resolve(false) }));
+}
+
 interface PromptReq { title: string; message?: string; secure?: boolean; resolve: (v: string | null) => void }
 const usePromptStore = create<{ req: PromptReq | null; set: (r: PromptReq | null) => void }>((set) => ({
   req: null, set: (req) => set({ req }),

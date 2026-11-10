@@ -15,3 +15,23 @@ export function monthStart(back = 0, from = todayIST()) {
   const [y, m] = from.split('-').map(Number);
   return new Date(Date.UTC(y!, m! - 1 - back, 1)).toISOString().slice(0, 10);
 }
+
+/** "09:12 AM" in IST for a timestamp */
+export const timeIST = (ts: string | null | undefined) => {
+  if (!ts) return '—';
+  const d = new Date(new Date(ts).getTime() + 5.5 * 3600_000);
+  const h = d.getUTCHours(), m = d.getUTCMinutes();
+  return `${String(((h + 11) % 12) + 1).padStart(2, '0')}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+/** "10-11-2026 09:12 AM" in IST */
+export const dateTimeIST = (ts: string | null | undefined) => {
+  if (!ts) return '—';
+  const d = new Date(new Date(ts).getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
+  return `${dmy(d)} ${timeIST(ts)}`;
+};
+/** "3h 25m" */
+export const hoursLabel = (h: number | null | undefined) => {
+  if (h == null) return '—';
+  const mins = Math.round(Number(h) * 60);
+  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+};

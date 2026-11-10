@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatBreakdown } from '@wh/shared';
 import { rpc } from '../../src/api/client';
+import { ClockBanner } from '../../src/components/ClockBanner';
 import { Card, Chips, Field, Label, Row, Screen } from '../../src/components/ui';
 
 interface StockRow {
@@ -17,6 +18,7 @@ export default function Stock() {
   const rows = (inv.data ?? []).filter((r) => !q || `${r.name} ${r.sku_code} ${r.brand ?? ''}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <Screen>
+      <ClockBanner />
       <Field label="Filter" value={q} onChangeText={setQ} placeholder="Name, SKU or brand" />
       <Chips options={['All', 'Low'] as const} value={filter} onChange={setFilter} />
       <Card>
