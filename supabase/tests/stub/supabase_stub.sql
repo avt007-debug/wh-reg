@@ -67,3 +67,21 @@ CREATE FUNCTION storage.foldername(name text) RETURNS text[] LANGUAGE sql IMMUTA
   SELECT (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1]
 $$;
 GRANT EXECUTE ON FUNCTION storage.foldername(text) TO anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------- vault (plain-text stand-in; real Vault encrypts)
+CREATE SCHEMA IF NOT EXISTS vault;
+CREATE TABLE vault.secrets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text UNIQUE, description text, secret text NOT NULL,
+  created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
+);
+CREATE VIEW vault.decrypted_secrets AS SELECT id, name, description, secret, secret AS decrypted_secret FROM vault.secrets;
+CREATE FUNCTION vault.create_secret(new_secret text, new_name text DEFAULT NULL, new_description text DEFAULT '', new_key_id uuid DEFAULT NULL)
+RETURNS uuid LANGUAGE sql AS $$
+  INSERT INTO vault.secrets(name, description, secret) VALUES (new_name, new_description, new_secret) RETURNING id
+$$;
+CREATE FUNCTION vault.update_secret(secret_id uuid, new_secret text DEFAULT NULL, new_name text DEFAULT NULL,
+                                    new_description text DEFAULT NULL, new_key_id uuid DEFAULT NULL)
+RETURNS void LANGUAGE sql AS $$
+  UPDATE vault.secrets SET secret = coalesce(new_secret, secret), name = coalesce(new_name, name),
+                           description = coalesce(new_description, description), updated_at = now() WHERE id = secret_id
+$$;

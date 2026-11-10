@@ -90,8 +90,21 @@ INSERT INTO purchase_items(purchase_id, line_no, product_id, uom_code, conversio
 VALUES ('c0000000-0000-0000-0000-000000000001', 1, (SELECT id FROM products WHERE sku_code = 'STN-CS-1724'),
         'BOX', 999, 10, 18, 3500, 4130);
 COMMIT;
+-- Staff purchases wait for the owner: no stock until approved.
+SELECT t.ok((SELECT status::text FROM purchases WHERE id = 'c0000000-0000-0000-0000-000000000001') = 'PENDING'
+            AND (SELECT qty_on_hand FROM inventory_levels il JOIN products p ON p.id = il.product_id
+                  WHERE p.sku_code = 'STN-CS-1724') = 60, 'staff purchase is PENDING and adds no stock yet');
+SELECT t.throws($$SELECT public.owner_approve_purchase('c0000000-0000-0000-0000-000000000001')$$, 'WH002', 'employees cannot approve purchases');
+SELECT t.throws($$SELECT public.owner_pending_purchases()$$, 'WH002', 'employees cannot list pending approvals');
+:AS_OWNER
+SELECT t.ok((SELECT x->>'entered_by' FROM jsonb_array_elements(public.owner_pending_purchases()) x
+              WHERE x->>'id' = 'c0000000-0000-0000-0000-000000000001') = (SELECT full_name FROM users WHERE id = :EMPA),
+            'owner sees the pending purchase and who entered it');
+SELECT t.ok(public.owner_approve_purchase('c0000000-0000-0000-0000-000000000001')->>'status' = 'POSTED', 'owner approves the purchase');
+SELECT t.throws($$SELECT public.owner_approve_purchase('c0000000-0000-0000-0000-000000000001')$$, 'WH005', 'a purchase cannot be approved twice');
+:AS_EMPA
 SELECT t.ok((SELECT qty_on_hand FROM inventory_levels il JOIN products p ON p.id = il.product_id
-              WHERE p.sku_code = 'STN-CS-1724') = 110, 'inward 10 BOX x 5 = 50 pcs (server-side UoM factor, spoofed 999 ignored)');
+              WHERE p.sku_code = 'STN-CS-1724') = 110, 'after approval: inward 10 BOX x 5 = 50 pcs (server-side UoM factor, spoofed 999 ignored)');
 SELECT t.ok((SELECT created_by FROM purchases WHERE id = 'c0000000-0000-0000-0000-000000000001') = :EMPA,
             'created_by forced to the signed-in user');
 SELECT t.ok((SELECT (taxable_total, cgst_total, sgst_total, igst_total, grand_total, is_interstate)
@@ -124,6 +137,13 @@ SELECT t.ok((public.create_purchase(jsonb_build_object(
 SELECT t.throws($$INSERT INTO purchases(client_txn_id, warehouse_id, vendor_id, vendor_invoice_no, vendor_invoice_date, is_interstate)
                  VALUES (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000002', (SELECT id FROM vendors LIMIT 1), 'X1', current_date, false)$$,
                 '42501', 'direct insert into another warehouse blocked by RLS');
+SELECT t.ok((:'p_r'::jsonb)->'purchase'->>'status' = 'PENDING', 'staff inward via RPC comes back as PENDING (waiting for the owner)');
+:AS_OWNER
+SELECT t.ok((SELECT count(*) FROM jsonb_array_elements(public.owner_pending_purchases()) x
+              WHERE x->>'vendor_invoice_no' IN ('BCP-55120', 'KTD-PIN') AND x->>'status' = 'PENDING') = 2, 'both staff purchases await approval');
+SELECT public.owner_approve_purchase((x->>'id')::uuid) FROM jsonb_array_elements(public.owner_pending_purchases()) x
+ WHERE x->>'vendor_invoice_no' IN ('BCP-55120', 'KTD-PIN') \g /dev/null
+:AS_EMPA
 
 DO $$ BEGIN
   BEGIN
@@ -331,6 +351,76 @@ SELECT t.ok(jsonb_array_length(public.owner_stock_list()) = (SELECT count(*) FRO
             'no company selected → every active item, including zero stock');
 
 -- =============================================================================
+\echo '── Items, stock history, staff passwords, attendance, field work, employee reports'
+:AS_OWNER
+SELECT public.owner_save_product(jsonb_build_object('skuCode', 'tap-hm-500', 'name', 'Claw Hammer 500g', 'brandId', (SELECT id FROM brands WHERE name = 'Taparia'),
+  'hsnCode', '8205', 'gstRate', 18, 'mrp', 590, 'sellingPrice', 500, 'reorderLevel', 12,
+  'packs', jsonb_build_array(jsonb_build_object('code', 'BOX', 'factor', 6)),
+  'openingStock', jsonb_build_array(jsonb_build_object('warehouseId', :WHA, 'qty', 30)))) ->> 'id' AS hm \gset
+SELECT t.ok((SELECT sku_code FROM products WHERE id = :'hm') = 'TAP-HM-500'
+            AND (SELECT count(*) FROM product_uoms WHERE product_id = :'hm') = 2, 'owner adds an item (code upper-cased, base + BOX pack)');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE product_id = :'hm' AND warehouse_id = :WHA) = 30, 'opening stock posted for the new item');
+SELECT t.throws($$SELECT public.owner_save_product(jsonb_build_object('skuCode', 'TAP-HM-500', 'name', 'Dup', 'gstRate', 18))$$, 'WH005', 'duplicate item code refused');
+SELECT t.throws($$SELECT public.owner_save_product(jsonb_build_object('skuCode', 'X-1', 'name', 'Bad HSN', 'gstRate', 18, 'hsnCode', '12'))$$, 'WH005', 'bad HSN refused');
+SELECT public.owner_save_product(jsonb_build_object('id', :'hm', 'skuCode', 'TAP-HM-500', 'name', 'Claw Hammer 500 g', 'hsnCode', '820520', 'gstRate', 5,
+  'mrp', 525, 'sellingPrice', 500, 'packs', '[]'::jsonb)) \g /dev/null
+SELECT t.ok((SELECT name || '|' || hsn_code || '|' || default_gst_rate FROM products WHERE id = :'hm') = 'Claw Hammer 500 g|820520|5.00'
+            AND (SELECT count(*) FROM product_uoms WHERE product_id = :'hm') = 1, 'owner edits name, HSN, GST and removes the pack');
+SELECT t.ok((SELECT x->>'entered_by' FROM jsonb_array_elements(public.owner_stock_history(:'hm')) x LIMIT 1) = 'Business Owner',
+            'stock history shows who entered the stock');
+SELECT t.ok((SELECT x->>'entered_by' FROM jsonb_array_elements(public.owner_stock_history((SELECT id FROM products WHERE sku_code = 'STN-CS-1724'), :WHA)) x
+              WHERE x->>'movement' = 'PURCHASE_IN' LIMIT 1) = (SELECT full_name FROM users WHERE id = :EMPA),
+            'an approved staff purchase is credited to the employee who entered it');
+SELECT t.ok((SELECT x->'last_entry'->>'by' FROM jsonb_array_elements(public.owner_stock_list(:WHA)) x WHERE x->>'sku_code' = 'TAP-HM-500') = 'Business Owner',
+            'stock list shows the last person who entered stock');
+SELECT public.owner_reject_purchase(id, 'wrong bill') FROM purchases WHERE false \g /dev/null
+
+-- staff passwords: written by the Edge Function (service role), read only by owners
+RESET ROLE; SET ROLE service_role;
+SELECT public.svc_store_staff_password(:EMPA, 'Ravi2026pass');
+SELECT public.svc_store_staff_password(:EMPA, 'Ravi2027pass');
+:AS_OWNER
+SELECT t.ok(public.owner_staff_password(:EMPA) = 'Ravi2027pass', 'owner can look up the password they last set');
+SELECT t.ok((SELECT (x->>'has_saved_password')::boolean FROM jsonb_array_elements(public.owner_list_users()) x WHERE x->>'id' = :EMPA),
+            'user list marks saved passwords');
+SELECT t.throws($$SELECT public.owner_staff_password('00000000-0000-0000-0000-000000000001')$$, 'WH002', 'owner passwords are never stored or shown');
+SELECT t.throws($$SELECT public.svc_store_staff_password('00000000-0000-0000-0000-000000000010', 'x')$$, '42501', 'the app cannot write passwords directly');
+
+-- attendance + field work as an employee
+:AS_EMPA
+SELECT t.throws($$SELECT public.owner_staff_password('00000000-0000-0000-0000-000000000010')$$, 'WH002', 'employees cannot see passwords');
+SELECT t.throws($$SELECT * FROM attendance$$, '42501', 'attendance table is not directly readable');
+SELECT t.ok((public.clock_in('reached shop'))->>'clock_out_at' IS NULL, 'employee clocks in');
+SELECT t.throws($$SELECT public.clock_in()$$, 'WH005', 'cannot clock in twice');
+SELECT t.ok((public.my_attendance())->'open' IS NOT NULL, 'my_attendance shows the open shift');
+SELECT t.ok((public.clock_out())->>'clock_out_at' IS NOT NULL, 'employee clocks out');
+SELECT t.throws($$SELECT public.clock_out()$$, 'WH005', 'cannot clock out when not clocked in');
+SELECT t.ok(jsonb_array_length((public.log_market_run(jsonb_build_object('place', 'Puttur', 'notes', 'weekly round',
+  'visits', jsonb_build_array(jsonb_build_object('customerName', 'Sri Lakshmi Hardware', 'phone', '98480 12345', 'outcome', 'ORDER'),
+                              jsonb_build_object('customerName', 'Balaji Traders', 'outcome', 'INTERESTED'))))) -> 'visits') = 2,
+            'employee logs a market run to Puttur with 2 customers');
+SELECT public.log_market_run(jsonb_build_object('place', 'puttur ')) \g /dev/null
+SELECT public.log_market_run(jsonb_build_object('place', 'Nagari')) \g /dev/null
+SELECT public.add_customer_visit(jsonb_build_object('customerName', 'Walk-in contractor', 'place', 'Chittoor', 'outcome', 'FOLLOW_UP'));
+SELECT t.ok(jsonb_array_length((public.my_field_month())->'runs') = 3 AND jsonb_array_length((public.my_field_month())->'loose_visits') = 1,
+            'my_field_month lists runs and stand-alone customers');
+:AS_EMPB
+SELECT t.ok(jsonb_array_length((public.my_field_month())->'runs') = 0, 'employees only see their own field work');
+SELECT t.throws($$SELECT public.owner_employees_month(current_date)$$, 'WH002', 'employees cannot open the employee report');
+
+:AS_OWNER
+SELECT t.ok((SELECT (x->'stats'->>'market_runs')::int = 3 AND (x->'stats'->>'places')::int = 2 AND (x->'stats'->>'customers_approached')::int = 3
+                    AND (x->'stats'->>'days_present')::int = 1
+               FROM jsonb_array_elements(public.owner_employees_month(app.today_ist())) x WHERE x->>'id' = :EMPA),
+            'monthly report: 3 runs, 2 places, 3 customers, 1 day present');
+SELECT t.ok((SELECT (x->>'runs')::int FROM jsonb_array_elements((public.owner_employee_month(:EMPA, app.today_ist()))->'places') x
+              WHERE lower(x->>'place') = 'puttur') = 2, 'runs are counted per place (Puttur twice, case/space-insensitive)');
+SELECT t.ok(jsonb_array_length((public.owner_employee_month(:EMPA, app.today_ist()))->'trend') = 6, 'six-month performance trend');
+SELECT public.owner_fix_attendance(((public.owner_employee_month(:EMPA, app.today_ist()))->'attendance'->0->>'id')::uuid,
+                                   app.today_ist_start() + interval '9 hours', app.today_ist_start() + interval '18 hours');
+SELECT t.ok((SELECT (x->>'hours')::numeric FROM jsonb_array_elements((public.owner_employee_month(:EMPA, app.today_ist()))->'attendance') x LIMIT 1) = 9,
+            'owner corrects a shift (09:00–18:00 = 9 h)');
+
 \echo '── WhatsApp worker (service role, as used by the Edge Function)'
 -- =============================================================================
 :AS_SERVICE
