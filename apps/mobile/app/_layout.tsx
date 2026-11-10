@@ -24,7 +24,7 @@ function Navigator() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Protected guard={!user}>
-        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(auth)/login" />
       </Stack.Protected>
       <Stack.Protected guard={!!user && owner}>
         <Stack.Screen name="(owner)" />
