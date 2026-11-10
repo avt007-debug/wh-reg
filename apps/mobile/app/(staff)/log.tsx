@@ -1,0 +1,31 @@
+import { useQuery } from '@tanstack/react-query';
+import { formatINR } from '@wh/shared';
+import { api } from '../../src/api/client';
+import { useAuth } from '../../src/auth/store';
+import { Button, Card, Label, Row, Screen } from '../../src/components/ui';
+
+/** "My Day": the employee's own entries from today (that is all RLS returns to them). */
+export default function MyDay() {
+  const logout = useAuth((s) => s.clear);
+  const q = useQuery({
+    queryKey: ['my-day'],
+    queryFn: async () => ({
+      dispatches: await api<{ id: string; invoice_no: string; customer_name: string; grand_total: number; used_override: boolean }[]>('/dispatches'),
+      purchases: await api<{ id: string; vendor_name: string; vendor_invoice_no: string; grand_total: number }[]>('/purchases'),
+    }),
+  });
+  return (
+    <Screen>
+      <Card title={`Outward today (${q.data?.dispatches.length ?? 0})`}>
+        {q.data?.dispatches.map((d) => (
+          <Row key={d.id} left={d.invoice_no} sub={`${d.customer_name}${d.used_override ? ' · override' : ''}`} right={formatINR(d.grand_total)} />
+        ))}
+      </Card>
+      <Card title={`Inward today (${q.data?.purchases.length ?? 0})`}>
+        {q.data?.purchases.map((p) => <Row key={p.id} left={p.vendor_name} sub={p.vendor_invoice_no} right={formatINR(p.grand_total)} />)}
+      </Card>
+      <Label muted>Entries are locked once saved. Ask the owner to cancel a wrong entry, then re-enter it.</Label>
+      <Button title="Log out" kind="secondary" onPress={() => void logout()} />
+    </Screen>
+  );
+}

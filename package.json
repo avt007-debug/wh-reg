@@ -1,0 +1,18 @@
+{
+  "name": "wh-reg",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:migrate": "./db/migrate.sh",
+    "db:seed": "./db/migrate.sh --seed",
+    "db:test": "./db/test.sh"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10",
+    "typescript": "^5.9.0"
+  }
+}

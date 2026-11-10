@@ -1,0 +1,36 @@
+{
+  "name": "@wh/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "align": "expo install --fix"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.107.1",
+    "@wh/shared": "workspace:*",
+    "expo": "~58.0.23",
+    "expo-crypto": "~58.0.7",
+    "expo-image": "~58.0.18",
+    "expo-image-picker": "~58.0.10",
+    "expo-linear-gradient": "~58.0.3",
+    "expo-router": "~58.0.30",
+    "expo-secure-store": "~58.0.2",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-gifted-charts": "^1.4.81",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1",
+    "react-native-svg": "15.16.0",
+    "zod": "^4.6.7",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "typescript": "^5.9.0"
+  }
+}

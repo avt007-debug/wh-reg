@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Expo/Metro needs a flat node_modules (pnpm 10 reads settings from this file)
+nodeLinker: hoisted
