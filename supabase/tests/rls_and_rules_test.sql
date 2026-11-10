@@ -435,6 +435,65 @@ SELECT public.wa_status_update('wamid.TEST', 'delivered');
 SELECT t.ok(((public.wa_eod_payload(app.today_ist()))->'warehouses'->0->>'total_incl_gst')::numeric = 147736.00,
             'EOD digest payload: WHA total after cancellation');
 
+\echo '── Sales bills: typed invoice no, new customer, ₹ discount, MRP, GST vs Non-GST'
+:AS_EMPA
+SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(), 'invoiceNo', 'ctr-b-101',
+  'newCustomer', jsonb_build_object('name', 'Venkat Traders', 'gstin', '37AAPFV1234K1ZS', 'phone', '98480 11111'),
+  'lines', jsonb_build_array(
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 10,
+                       'unitBasePrice', 2, 'gstRate', 18, 'discountAmount', 2, 'mrp', 3, 'hsnCode', '3926'),
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS', 'qty', 1,
+                       'unitBasePrice', 300, 'gstRate', 0, 'hsnCode', '8205')))) -> 'dispatch' AS sb \gset
+SELECT t.ok(:'sb'::jsonb->>'invoice_no' = 'CTR-B-101' AND :'sb'::jsonb->>'customer_gstin' = '37AAPFV1234K1ZS',
+            'typed invoice number kept (upper-cased); new customer with GSTIN created on the bill');
+SELECT t.ok((:'sb'::jsonb->>'taxable_total')::numeric = 318 AND (:'sb'::jsonb->>'grand_total')::numeric = 321.24
+            AND (:'sb'::jsonb->>'discount_total')::numeric = 2,
+            '₹2 discount on 10 × ₹2 at 18% (=₹21.24) + ₹300 at 0% → ₹321.24');
+SELECT t.ok((public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(),
+  'newCustomer', jsonb_build_object('name', 'venkat traders ltd', 'gstin', '37aapfv1234k1zs'),
+  'lines', jsonb_build_array(jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'),
+                             'uomCode', 'PCS', 'qty', 1, 'unitBasePrice', 2)))) -> 'dispatch' ->> 'customer_name') = 'Venkat Traders',
+            'same GSTIN reuses the existing customer; blank invoice number is auto-numbered');
+SELECT t.throws($$SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(), 'invoiceNo', 'CTR-B-101',
+  'newCustomer', jsonb_build_object('name', 'X Y'), 'lines', jsonb_build_array(jsonb_build_object(
+  'productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 1, 'unitBasePrice', 2))))$$,
+  '23505', 'the same invoice number cannot be used twice');
+SELECT t.throws($$SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(),
+  'newCustomer', jsonb_build_object('name', 'Bad GST', 'gstin', '37AAPFV1234K1ZZ'), 'lines', jsonb_build_array(jsonb_build_object(
+  'productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 1, 'unitBasePrice', 2))))$$,
+  'WH005', 'an invalid customer GST number is refused');
+SELECT t.throws($$SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(),
+  'newCustomer', jsonb_build_object('name', 'Too Much Off'), 'lines', jsonb_build_array(jsonb_build_object(
+  'productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 1, 'unitBasePrice', 2, 'discountAmount', 5))))$$,
+  '23514', 'discount cannot be more than the line value');
+SELECT t.throws($$SELECT public.owner_sales_month(current_date)$$, 'WH002', 'employees cannot open the sales register');
+SELECT t.throws($$SELECT public.owner_attendance_today()$$, 'WH002', 'employees cannot see everyone''s attendance');
+
+:AS_OWNER
+SELECT t.ok((SELECT (x->>'entered_by') = (SELECT full_name FROM users WHERE id = :EMPA)
+                    AND (SELECT sum((l->>'line_total')::numeric) FROM jsonb_array_elements(x->'lines') l WHERE (l->>'gst_rate')::numeric = 0) = 300
+                    AND (SELECT sum((l->>'line_total')::numeric) FROM jsonb_array_elements(x->'lines') l WHERE (l->>'gst_rate')::numeric > 0) = 21.24
+               FROM jsonb_array_elements(public.owner_sales_month(app.today_ist())) x WHERE x->>'invoice_no' = 'CTR-B-101'),
+            'sales register: who entered it; ₹21.24 GST-billed and ₹300 Non-GST-billed');
+SELECT t.ok((SELECT x->'lines'->0->>'mrp' FROM jsonb_array_elements(public.owner_sales_month(app.today_ist())) x WHERE x->>'invoice_no' = 'CTR-B-101') = '3.00',
+            'MRP stored on the sales line');
+SELECT public.create_purchase(jsonb_build_object('clientTxnId', gen_random_uuid(), 'warehouseId', :WHA,
+  'vendorId', (SELECT id FROM vendors WHERE gstin = '29AAACW1234K1Z9'), 'vendorInvoiceNo', 'DISC-1', 'vendorInvoiceDate', app.today_ist(),
+  'lines', jsonb_build_array(
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 10,
+                       'gstRate', 18, 'unitBasePrice', 100, 'unitInclPrice', 118, 'discountAmount', 50, 'mrp', 150),
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS', 'qty', 2,
+                       'gstRate', 0, 'unitBasePrice', 250, 'unitInclPrice', 250)))) -> 'purchase' AS pd \gset
+SELECT t.ok((:'pd'::jsonb->>'taxable_total')::numeric = 1450 AND (:'pd'::jsonb->>'grand_total')::numeric = 1621,
+            'purchase with ₹50 discount on a 18% line + a 0% line: taxable ₹1,450, total ₹1,621');
+SELECT t.ok((SELECT (l->>'discount_amount')::numeric = 50 AND (l->>'mrp')::numeric = 150
+               FROM jsonb_array_elements(public.owner_purchase_detail((:'pd'::jsonb->>'id')::uuid) -> 'lines') l WHERE (l->>'gst_rate')::numeric = 18),
+            'purchase line keeps its discount amount and MRP');
+SELECT t.ok((SELECT x->>'first_in' IS NOT NULL FROM jsonb_array_elements(public.owner_attendance_today()) x WHERE x->>'id' = :EMPA),
+            'dashboard shows today''s clock-in for the employee');
+SELECT t.ok((SELECT count(*) FROM jsonb_array_elements(public.owner_attendance_today(:WHB)) x WHERE x->>'id' = :EMPA) = 0,
+            'today''s attendance follows the warehouse switch');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================
@@ -459,7 +518,8 @@ SELECT t.ok(NOT EXISTS (
 
 UPDATE dispatches SET created_at = now() - interval '1 day' WHERE id = (:'d1'::jsonb->>'id')::uuid;
 :AS_EMPA
-SELECT t.ok((SELECT count(*) FROM dispatches) = 1, 'yesterday''s entries drop out of the employee''s daily view');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM dispatches WHERE id = (:'d1'::jsonb->>'id')::uuid) AND EXISTS (SELECT 1 FROM dispatches),
+            'yesterday''s entries drop out of the employee''s daily view');
 RESET ROLE;
 UPDATE users SET is_active = false WHERE id = :EMPA;
 :AS_EMPA

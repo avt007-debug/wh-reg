@@ -5,7 +5,7 @@
 #   Real Supabase stack (CI / your PC with Docker):
 #     supabase start && ./supabase/tests/run.sh --supabase
 #   Plain Postgres 15+ (no Docker) — uses supabase/tests/stub/supabase_stub.sql:
-#     ADMIN_URL=postgres://postgres@localhost:5432/postgres ./supabase/tests/run.sh --plain
+#     ADMIN_URL=postgres://postgres@localhost:5432/postgres ./supabase/tests/run.sh --plain   (needs PostgreSQL 17+)
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TEST="$DIR/tests/rls_and_rules_test.sql"
