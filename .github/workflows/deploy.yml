@@ -24,11 +24,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Skip (green, with a notice) until the Supabase secrets are added to the repo.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.s.outputs.ready }}
+    steps:
+      - id: s
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_ID: ${{ vars.SUPABASE_PROJECT_ID }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$PROJECT_ID" ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::Supabase deploy skipped - add SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_ID to enable it."; fi
+
   ci:
+    needs: check
+    if: needs.check.outputs.ready == 'true'
     uses: ./.github/workflows/ci.yml
 
   deploy:
-    needs: ci
+    needs: [check, ci]
+    if: needs.check.outputs.ready == 'true'
     runs-on: ubuntu-latest
     environment: production
     env:
