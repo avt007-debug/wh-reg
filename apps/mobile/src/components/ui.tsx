@@ -5,7 +5,8 @@ import { useTheme } from '../theme';
 
 export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
   const t = useTheme();
-  const body = <View style={{ padding: 16, gap: 12 }}>{children}</View>;
+  // Centered column on wide (desktop browser) screens; full width on phones.
+  const body = <View style={{ padding: 16, gap: 12, width: '100%', maxWidth: 960, alignSelf: 'center' }}>{children}</View>;
   return scroll
     ? <ScrollView style={{ flex: 1, backgroundColor: t.surface }} keyboardShouldPersistTaps="handled">{body}</ScrollView>
     : <View style={{ flex: 1, backgroundColor: t.surface }}>{body}</View>;

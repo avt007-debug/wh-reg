@@ -1,0 +1,61 @@
+# Builds the app as a website and publishes it on GitHub Pages:
+#   https://<your-github-username>.github.io/<repo-name>/
+# Runs on every push to main that touches the app, or manually.
+#
+# One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Website (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/mobile/**', 'packages/shared/**', '.github/workflows/website.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  # Public by design: the publishable key only lets a browser talk to Supabase;
+  # Row Level Security in the database decides what each signed-in user can see.
+  EXPO_PUBLIC_SUPABASE_URL: https://tsmidsdhtyqqzqlmotea.supabase.co
+  EXPO_PUBLIC_SUPABASE_KEY: sb_publishable_yuZOnGPDu-EkWeTDzNheFw_MHVN7a1k
+  EXPO_PUBLIC_LOGIN_EMAIL_DOMAIN: staff.whreg.app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wh/shared build
+      - name: Export web build
+        working-directory: apps/mobile
+        env:
+          EXPO_BASE_URL: /${{ github.event.repository.name }}
+        run: npx expo export --platform web
+      - name: SPA fallback (deep links like /dashboard)
+        run: cp apps/mobile/dist/index.html apps/mobile/dist/404.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/mobile/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

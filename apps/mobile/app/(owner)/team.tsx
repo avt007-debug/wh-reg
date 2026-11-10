@@ -5,11 +5,12 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Alert } from 'react-native';
+
 import { edge, q, rpc } from '../../src/api/client';
 import type { Warehouse } from '../../src/api/types';
 import { Button, Card, Chips, Field, Label, Row, Screen } from '../../src/components/ui';
 import { supabase } from '../../src/lib/supabase';
+import { notify, askText } from '../../src/lib/dialogs';
 
 interface StaffRow { id: string; login_id: string; full_name: string; role: string; is_active: boolean; warehouse_code: string | null; last_sign_in_at: string | null; has_override_pin: boolean }
 interface OutboxRow { id: number; event_type: string; status: string; attempts: number; last_error: string | null; created_at: string }
@@ -27,26 +28,27 @@ export default function Team() {
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
   const refresh = () => void qc.invalidateQueries({ queryKey: ['users'] });
-  const fail = (e: unknown) => Alert.alert('Not saved', e instanceof Error ? e.message : String(e));
+  const fail = (e: unknown) => notify('Not saved', e instanceof Error ? e.message : String(e));
 
   const create = useMutation({
     mutationFn: () => edge('admin-users', {
       action: 'create', loginId: loginId.trim(), fullName: fullName.trim(), role, password,
       primaryWarehouseId: whs.data?.find((w) => w.code === wh)?.id,
     }),
-    onSuccess: () => { Alert.alert('Login created', `User ID: ${loginId}`); setLoginId(''); setFullName(''); setPassword(''); refresh(); },
+    onSuccess: () => { notify('Login created', `User ID: ${loginId}`); setLoginId(''); setFullName(''); setPassword(''); refresh(); },
     onError: fail,
   });
   const toggle = useMutation({
     mutationFn: (u: StaffRow) => edge('admin-users', { action: 'set_active', userId: u.id, active: !u.is_active }),
     onSuccess: refresh, onError: fail,
   });
-  const resetPw = (u: StaffRow) => Alert.prompt?.('New password', `For ${u.login_id} (min 10 chars, letters + digits)`, (pw) => {
-    if (pw) edge('admin-users', { action: 'set_password', userId: u.id, password: pw }).then(() => Alert.alert('Password changed'), fail);
-  });
+  const resetPw = async (u: StaffRow) => {
+    const pw = await askText('New password', `For ${u.login_id} (min 10 chars, letters + digits)`, { secure: true });
+    if (pw) edge('admin-users', { action: 'set_password', userId: u.id, password: pw }).then(() => notify('Password changed'), fail);
+  };
   const savePin = useMutation({
     mutationFn: () => rpc('owner_set_override_pin', { p_pin: pin }),
-    onSuccess: () => { setPin(''); refresh(); Alert.alert('Override PIN saved'); }, onError: fail,
+    onSuccess: () => { setPin(''); refresh(); notify('Override PIN saved'); }, onError: fail,
   });
 
   return (

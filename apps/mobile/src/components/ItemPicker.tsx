@@ -9,11 +9,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import {FlatList, Modal, Pressable, Text, TextInput, View} from 'react-native';
 import { formatBreakdown } from '@wh/shared';
 import { rpc } from '../api/client';
 import { productImageUrl } from '../lib/supabase';
 import { toUoms, type ProductHit } from '../api/types';
+import { askText } from '../lib/dialogs';
 import { useTheme } from '../theme';
 import { Button, Chips, Label } from './ui';
 
@@ -47,10 +48,10 @@ export function ItemPicker({ visible, onClose, onPick }: { visible: boolean; onC
     enabled: visible && (dq.length >= 2 || !!brandId || !!cat),
   });
 
-  const addAlias = (p: ProductHit) =>
-    Alert.prompt?.('Add local name', `What do customers call "${p.name}"?`, async (alias) => {
-      if (alias?.trim()) await rpc('add_product_alias', { p_product: p.id, p_alias: alias.trim() });
-    });
+  const addAlias = async (p: ProductHit) => {
+    const alias = await askText('Add local name', `What do customers call "${p.name}"?`);
+    if (alias?.trim()) await rpc('add_product_alias', { p_product: p.id, p_alias: alias.trim() });
+  };
 
   const brands = tree.data?.brands ?? [];
   return (

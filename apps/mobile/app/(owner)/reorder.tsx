@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import {Pressable, Text, View} from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
 import { Button, Card, Label, Screen } from '../../src/components/ui';
+import { notify } from '../../src/lib/dialogs';
 import { useTheme } from '../../src/theme';
 
 interface Alert_ {
@@ -31,7 +32,7 @@ export default function Reorder() {
       }
       return n;
     },
-    onSuccess: (n) => { setSel({}); void qc.invalidateQueries({ queryKey: ['reorder'] }); Alert.alert(`${n} draft PO(s) created`, 'Grouped by last vendor.'); },
+    onSuccess: (n) => { setSel({}); void qc.invalidateQueries({ queryKey: ['reorder'] }); notify(`${n} draft PO(s) created`, 'Grouped by last vendor.'); },
   });
 
   return (

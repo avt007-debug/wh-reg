@@ -6,7 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { Alert, Text } from 'react-native';
+import {Text} from 'react-native';
 import { documentTotals, formatINR, purchaseLine, type UnitPrice } from '@wh/shared';
 import { q, rpc, uploadPurchaseDoc } from '../../src/api/client';
 import { supabase } from '../../src/lib/supabase';
@@ -17,6 +17,7 @@ import { PriceGstField } from '../../src/components/PriceGstField';
 import { QtyUomField } from '../../src/components/QtyUomField';
 import { Button, Card, Field, Row, Screen } from '../../src/components/ui';
 import { newClientTxnId, todayIST } from '../../src/lib/ids';
+import { notify } from '../../src/lib/dialogs';
 import { useTheme } from '../../src/theme';
 
 interface Line { product: ProductHit; uomCode: string; qty: string; gstRate: number; price: UnitPrice | null; hsn: string }
@@ -64,12 +65,12 @@ export default function Inward() {
       });
     },
     onSuccess: (r) => {
-      Alert.alert('Goods received', `Landed cost ${formatINR(r.purchase.grand_total)}`);
+      notify('Goods received', `Landed cost ${formatINR(r.purchase.grand_total)}`);
       setTxnId(newClientTxnId()); setLines([]); setVendor(null); setInvoiceNo(''); setLr(''); setPhoto(null);
       void qc.invalidateQueries({ queryKey: ['inventory'] });
       void qc.invalidateQueries({ queryKey: ['my-day'] });
     },
-    onError: (e) => Alert.alert('Could not save', e instanceof Error ? e.message : String(e)),
+    onError: (e) => notify('Could not save', e instanceof Error ? e.message : String(e)),
   });
 
   const update = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));

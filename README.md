@@ -11,6 +11,10 @@ What it covers:
 - an owner dashboard
 - WhatsApp dispatch alerts and an 8:30 PM digest
 
+**Website:** every push to `main` publishes the app to GitHub Pages
+(`https://<github-username>.github.io/<repo>/`) via `.github/workflows/website.yml`, connected to the
+live Supabase project `wh-reg` (Mumbai).
+
 | Doc | Inside |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram, security model (roles, grants, RLS), data model, repo layout, RPC list |

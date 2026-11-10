@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import aesjs from 'aes-js';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 class LargeSecureStore {
   private async encrypt(key: string, value: string) {
@@ -43,11 +43,15 @@ const key = process.env.EXPO_PUBLIC_SUPABASE_KEY;        // publishable key (sb_
 if (!url || !key) throw new Error('Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_KEY (see apps/mobile/.env.example)');
 
 export const supabase = createClient(url, key, {
-  auth: { storage: new LargeSecureStore(), autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+  auth: {
+    // Phones: encrypted keystore-backed store. Browser: supabase-js default (localStorage).
+    ...(Platform.OS === 'web' ? {} : { storage: new LargeSecureStore() }),
+    autoRefreshToken: true, persistSession: true, detectSessionInUrl: false,
+  },
 });
 
 // Refresh tokens only while the app is in the foreground (Supabase RN guidance).
-AppState.addEventListener('change', (state) => {
+if (Platform.OS !== 'web') AppState.addEventListener('change', (state) => {
   if (state === 'active') void supabase.auth.startAutoRefresh();
   else void supabase.auth.stopAutoRefresh();
 });

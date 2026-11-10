@@ -9,10 +9,26 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      ["expo-image-picker", { "cameraPermission": "Used to photograph lorry receipts and vendor invoices." }]
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Used to photograph lorry receipts and vendor invoices."
+        }
+      ]
     ],
-    "android": { "package": "in.whreg.app", "softwareKeyboardLayoutMode": "pan" },
-    "ios": { "bundleIdentifier": "in.whreg.app" },
-    "experiments": { "typedRoutes": true }
+    "android": {
+      "package": "in.whreg.app",
+      "softwareKeyboardLayoutMode": "pan"
+    },
+    "ios": {
+      "bundleIdentifier": "in.whreg.app"
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "web": {
+      "output": "single",
+      "bundler": "metro"
+    }
   }
 }

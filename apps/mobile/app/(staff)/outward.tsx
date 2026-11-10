@@ -6,7 +6,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import {Text, View} from 'react-native';
 import {
   documentTotals, formatINR, saleLine, TRANSPORT_MODES, type StockShortfall,
 } from '@wh/shared';
@@ -19,6 +19,7 @@ import { PartyPicker } from '../../src/components/PartyPicker';
 import { QtyUomField } from '../../src/components/QtyUomField';
 import { Button, Card, Chips, Field, Label, Row, Screen } from '../../src/components/ui';
 import { newClientTxnId } from '../../src/lib/ids';
+import { notify } from '../../src/lib/dialogs';
 import { useTheme } from '../../src/theme';
 
 interface Line { product: ProductHit; uomCode: string; qty: string; price: string; discountPct: string }
@@ -59,14 +60,14 @@ export default function Outward() {
     }),   // server pins the warehouse, sets invoice no./date, GST split, and queues the WhatsApp alert
     onSuccess: (r) => {
       setShortfalls(null);
-      Alert.alert('Dispatched', `${r.dispatch.invoice_no} · ${formatINR(r.dispatch.grand_total)}`);
+      notify('Dispatched', `${r.dispatch.invoice_no} · ${formatINR(r.dispatch.grand_total)}`);
       setTxnId(newClientTxnId()); setLines([]); setCustomer(null); setVehicle(''); setDriver('');
       void qc.invalidateQueries({ queryKey: ['inventory'] });
       void qc.invalidateQueries({ queryKey: ['my-day'] });
     },
     onError: (e) => {
       if (e instanceof ApiError && e.code === 'INSUFFICIENT_STOCK') setShortfalls(e.details as StockShortfall[]);
-      else Alert.alert('Could not save', e instanceof Error ? e.message : String(e));
+      else notify('Could not save', e instanceof Error ? e.message : String(e));
     },
   });
 

@@ -5,7 +5,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Alert } from 'react-native';
+
 import { q, rpc } from '../../src/api/client';
 import { supabase } from '../../src/lib/supabase';
 import { toUoms, type Me, type ProductHit, type Warehouse } from '../../src/api/types';
@@ -13,6 +13,7 @@ import { ItemPicker } from '../../src/components/ItemPicker';
 import { QtyUomField } from '../../src/components/QtyUomField';
 import { Button, Card, Chips, Field, Label, Row, Screen } from '../../src/components/ui';
 import { newClientTxnId } from '../../src/lib/ids';
+import { notify } from '../../src/lib/dialogs';
 
 interface Note {
   id: string; note_no: string; status: string; from_code: string; to_code: string; to_warehouse_id: string;
@@ -37,12 +38,12 @@ export default function Transfers() {
       clientTxnId: txnId, toWarehouseId: whs.data!.find((w) => w.code === to)!.id, vehicleRegNo: vehicle || undefined,
       lines: lines.map((l) => ({ productId: l.product.id, uomCode: l.uomCode, qty: Number(l.qty) })),
     } }),
-    onSuccess: () => { setTxnId(newClientTxnId()); setLines([]); setTo(null); refresh(); Alert.alert('Transfer note dispatched'); },
-    onError: (e) => Alert.alert('Could not create transfer', e instanceof Error ? e.message : String(e)),
+    onSuccess: () => { setTxnId(newClientTxnId()); setLines([]); setTo(null); refresh(); notify('Transfer note dispatched'); },
+    onError: (e) => notify('Could not create transfer', e instanceof Error ? e.message : String(e)),
   });
   const receive = useMutation({
     mutationFn: (id: string) => rpc('receive_transfer', { p_note: id }),   // full qty; partial via p_lines (roadmap UI)
-    onSuccess: () => { refresh(); Alert.alert('Received into stock'); },
+    onSuccess: () => { refresh(); notify('Received into stock'); },
   });
 
   const inbound = (notes.data ?? []).filter((n) => n.status === 'IN_TRANSIT' && n.to_warehouse_id === me.data?.warehouse_id);
