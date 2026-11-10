@@ -21,4 +21,4 @@ export const toUoms = (p: ProductHit): Uom[] => p.uoms.map((u) => ({ code: u.cod
 
 export interface Party { id: string; name: string; gstin: string | null; state_code: string | null; phone: string | null }
 export interface Me { id: string; full_name: string; role: string; warehouse_id: string | null; warehouse_code: string | null; warehouse_name: string | null; warehouse_state: string | null }
-export interface Warehouse { id: string; code: string; name: string; state_code: string }
+export interface Warehouse { id: string; code: string; name: string; state_code: string; address?: string | null; gstin?: string | null; is_active?: boolean }

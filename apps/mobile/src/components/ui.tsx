@@ -58,6 +58,25 @@ export function Button({ title, onPress, kind = 'primary', busy, disabled }: {
   );
 }
 
+/** Compact button for toolbars ("Export to Excel", "Edit"). */
+export function SmallButton({ title, onPress, icon, kind = 'secondary', disabled }: {
+  title: string; onPress: () => void; icon?: string; kind?: 'primary' | 'secondary' | 'danger'; disabled?: boolean;
+}) {
+  const t = useTheme();
+  const bg = kind === 'primary' ? t.accent : kind === 'danger' ? t.danger : t.card;
+  const fg = kind === 'secondary' ? t.text : '#fff';
+  return (
+    <Pressable onPress={onPress} disabled={disabled}
+      style={({ pressed }) => [s.small, { backgroundColor: bg, borderColor: kind === 'secondary' ? t.border : bg, opacity: disabled ? 0.5 : pressed ? 0.8 : 1 }]}>
+      <Text style={{ color: fg, fontWeight: '600' }}>{icon ? `${icon} ` : ''}{title}</Text>
+    </Pressable>
+  );
+}
+
+export function Toolbar({ children }: { children: ReactNode }) {
+  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>{children}</View>;
+}
+
 export function Chips<T extends string | number>({ options, value, onChange, format }: {
   options: readonly T[]; value: T | null; onChange: (v: T) => void; format?: (v: T) => string;
 }) {
@@ -85,7 +104,9 @@ export function Row({ left, right, sub }: { left: ReactNode; right?: ReactNode; 
         <Text style={{ color: t.text, fontSize: 15 }}>{left}</Text>
         {sub ? <Text style={{ color: t.textMuted, fontSize: 12 }}>{sub}</Text> : null}
       </View>
-      {right ? <Text style={{ color: t.text, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{right}</Text> : null}
+      {right == null || right === false ? null : typeof right === 'string' || typeof right === 'number'
+        ? <Text style={{ color: t.text, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{right}</Text>
+        : right}
     </View>
   );
 }
@@ -93,7 +114,7 @@ export function Row({ left, right, sub }: { left: ReactNode; right?: ReactNode; 
 export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   const t = useTheme();
   return (
-    <View style={[s.card, { flex: 1, backgroundColor: t.card, borderColor: t.border, gap: 2 }]}>
+    <View style={[s.card, { flex: 1, minWidth: 150, backgroundColor: t.card, borderColor: t.border, gap: 2 }]}>
       <Label muted>{label}</Label>
       <Text style={{ color: t.text, fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{value}</Text>
       {sub ? <Label muted>{sub}</Label> : null}
@@ -106,6 +127,7 @@ const s = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '700' },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16, minHeight: 48 },
   btn: { borderWidth: 1, borderRadius: 10, minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  small: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, minHeight: 40, justifyContent: 'center' },
   chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, minHeight: 44, justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 12 },
 });

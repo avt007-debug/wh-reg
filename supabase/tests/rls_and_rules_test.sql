@@ -79,6 +79,7 @@ SELECT t.throws($$SELECT public.wa_claim_outbox(10)$$, '42501', 'WhatsApp worker
 SELECT t.throws($$SELECT public.owner_update_purchase(gen_random_uuid(), '{}'::jsonb)$$, 'WH002', 'employees cannot edit purchases');
 SELECT t.throws($$SELECT public.owner_set_stock('a0000000-0000-0000-0000-000000000001', gen_random_uuid(), 5)$$, 'WH002', 'employees cannot set stock counts');
 SELECT t.throws($$SELECT public.owner_purchases_month(current_date)$$, 'WH002', 'employees cannot open the purchase register');
+SELECT t.throws($$SELECT public.owner_stock_list()$$, 'WH002', 'employees cannot open the owner stock list');
 
 -- ---- Direct table writes (what a tampered app could send) are still sanitised.
 BEGIN;
@@ -321,6 +322,13 @@ SELECT public.owner_set_purchase_discount('c0000000-0000-0000-0000-000000000001'
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_purchases_month(app.today_ist() - 2)) x
                              WHERE x->>'vendor_invoice_no' = 'KTD/2026/7781' AND (x->>'bill_discount_amount')::numeric <> 0),
             'bill discount can be cleared (0)');
+SELECT t.ok((SELECT (x->'per_warehouse'->>'WHA')::numeric FROM jsonb_array_elements(public.owner_stock_list(:WHA)) x
+              WHERE x->>'sku_code' = 'FIS-SX8') = 9000, 'owner stock list shows the warehouse count');
+SELECT t.ok((SELECT count(*) FROM jsonb_array_elements(public.owner_stock_list(NULL, (SELECT id FROM brands WHERE name = 'Bosch'))) x)
+            = (SELECT count(*) FROM products WHERE is_active AND brand_id = (SELECT id FROM brands WHERE name = 'Bosch')),
+            'company (brand) filter returns only that company''s items');
+SELECT t.ok(jsonb_array_length(public.owner_stock_list()) = (SELECT count(*) FROM products WHERE is_active),
+            'no company selected → every active item, including zero stock');
 
 -- =============================================================================
 \echo '── WhatsApp worker (service role, as used by the Edge Function)'

@@ -1,24 +1,24 @@
 /**
- * Owner: staff logins, own Admin Override PIN, and WhatsApp delivery status.
+ * Owner settings: warehouses, staff logins, own Admin Override PIN, and WhatsApp delivery status.
  * Creating logins / passwords goes through the `admin-users` Edge Function
  * (Supabase Auth admin API never ships in the app).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { edge, q, rpc } from '../../src/api/client';
-import type { Warehouse } from '../../src/api/types';
+import { edge, rpc } from '../../src/api/client';
 import { Button, Card, Chips, Field, Label, Row, Screen } from '../../src/components/ui';
-import { supabase } from '../../src/lib/supabase';
+import { WarehouseAdmin } from '../../src/components/WarehouseAdmin';
+import { useWarehouses } from '../../src/lib/warehouse';
 import { notify, askText } from '../../src/lib/dialogs';
 
 interface StaffRow { id: string; login_id: string; full_name: string; role: string; is_active: boolean; warehouse_code: string | null; last_sign_in_at: string | null; has_override_pin: boolean }
 interface OutboxRow { id: number; event_type: string; status: string; attempts: number; last_error: string | null; created_at: string }
 
-export default function Team() {
+export default function Settings() {
   const qc = useQueryClient();
   const users = useQuery({ queryKey: ['users'], queryFn: () => rpc<StaffRow[]>('owner_list_users') });
-  const whs = useQuery({ queryKey: ['warehouses'], queryFn: () => q<Warehouse[]>(supabase.from('warehouses').select('id, code, name, state_code').order('code')) });
+  const whs = useWarehouses();
   const outbox = useQuery({ queryKey: ['outbox'], queryFn: () => rpc<OutboxRow[]>('owner_notifications', { p_limit: 10 }) });
 
   const [loginId, setLoginId] = useState('');
@@ -33,7 +33,7 @@ export default function Team() {
   const create = useMutation({
     mutationFn: () => edge('admin-users', {
       action: 'create', loginId: loginId.trim(), fullName: fullName.trim(), role, password,
-      primaryWarehouseId: whs.data?.find((w) => w.code === wh)?.id,
+      primaryWarehouseId: wh ?? undefined,
     }),
     onSuccess: () => { notify('Login created', `User ID: ${loginId}`); setLoginId(''); setFullName(''); setPassword(''); refresh(); },
     onError: fail,
@@ -53,6 +53,8 @@ export default function Team() {
 
   return (
     <Screen>
+      <WarehouseAdmin />
+
       <Card title="Staff logins">
         {users.data?.map((u) => (
           <Card key={u.id}>
@@ -65,10 +67,10 @@ export default function Team() {
       </Card>
 
       <Card title="Add staff login">
-        <Field label="User ID (what they type)" value={loginId} onChangeText={setLoginId} autoCapitalize="none" placeholder="e.g. suresh.wha" />
+        <Field label="User ID (what they type)" value={loginId} onChangeText={setLoginId} autoCapitalize="none" placeholder="e.g. suresh.ctr" />
         <Field label="Full name" value={fullName} onChangeText={setFullName} />
         <Chips options={['EMPLOYEE', 'ADMIN'] as const} value={role} onChange={setRole} />
-        {role === 'EMPLOYEE' ? <><Label>Warehouse</Label><Chips options={(whs.data ?? []).map((w) => w.code)} value={wh} onChange={setWh} /></> : null}
+        {role === 'EMPLOYEE' ? <><Label>Warehouse</Label><Chips options={(whs.data ?? []).map((w) => w.id)} value={wh} onChange={setWh} format={(v) => whs.data?.find((w) => w.id === v)?.name ?? v} /></> : null}
         <Field label="Temporary password" value={password} onChangeText={setPassword} secureTextEntry />
         <Button title="Create login" onPress={() => create.mutate()} busy={create.isPending}
           disabled={!loginId || !fullName || password.length < 10 || (role === 'EMPLOYEE' && !wh)} />
