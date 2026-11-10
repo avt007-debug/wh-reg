@@ -76,6 +76,9 @@ SELECT t.throws($$SELECT public.owner_stock_overview()$$, 'WH002', 'owner dashbo
 SELECT t.throws($$SELECT public.owner_set_purchase_discount(gen_random_uuid(), 'PERCENT', 50)$$, 'WH002', 'owner discount RPC refuses employees');
 SELECT t.throws($$SELECT public.owner_cancel_dispatch(gen_random_uuid(), 'x')$$, 'WH002', 'employees cannot cancel invoices');
 SELECT t.throws($$SELECT public.wa_claim_outbox(10)$$, '42501', 'WhatsApp worker RPCs are service-role only');
+SELECT t.throws($$SELECT public.owner_update_purchase(gen_random_uuid(), '{}'::jsonb)$$, 'WH002', 'employees cannot edit purchases');
+SELECT t.throws($$SELECT public.owner_set_stock('a0000000-0000-0000-0000-000000000001', gen_random_uuid(), 5)$$, 'WH002', 'employees cannot set stock counts');
+SELECT t.throws($$SELECT public.owner_purchases_month(current_date)$$, 'WH002', 'employees cannot open the purchase register');
 
 -- ---- Direct table writes (what a tampered app could send) are still sanitised.
 BEGIN;
@@ -94,6 +97,12 @@ SELECT t.ok((SELECT (taxable_total, cgst_total, sgst_total, igst_total, grand_to
                = (35000.00, 3150.00, 3150.00, 0.00, 41300.00, false)
              FROM purchases WHERE id = 'c0000000-0000-0000-0000-000000000001'),
             'purchase totals + CGST/SGST split; is_interstate derived from GSTINs');
+-- Even if an attacker could set the owner-edit flag, a non-owner still cannot add lines later.
+SELECT set_config('app.editing_doc', 'c0000000-0000-0000-0000-000000000001', false);
+SELECT t.throws($$INSERT INTO purchase_items(purchase_id, line_no, product_id, uom_code, conversion_factor, qty, gst_rate, unit_base_price, unit_incl_price)
+                 VALUES ('c0000000-0000-0000-0000-000000000001', 9, (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'PCS', 1, 1, 18, 1, 1.18)$$,
+                'WH005', 'edit flag is useless to non-owners (lines still locked)');
+SELECT set_config('app.editing_doc', '', false);
 
 -- ---- INWARD through the RPC (what the app calls)
 SELECT public.create_purchase(jsonb_build_object(
@@ -282,6 +291,37 @@ SELECT t.throws(format('UPDATE dispatches SET grand_total = 1 WHERE id = %L', :'
 INSERT INTO storage.objects(bucket_id, name) VALUES ('product-images', 'BOS-GSB13RE.jpg');
 SELECT t.ok((SELECT count(*) FROM storage.objects WHERE bucket_id = 'purchase-docs') = 1, 'owner can read purchase documents');
 
+-- ---- Per-item discount, purchase register, purchase editing, stock counts
+SELECT id AS spanner_line FROM purchase_items WHERE purchase_id = 'c0000000-0000-0000-0000-000000000001' \gset
+SELECT t.ok(((public.owner_set_item_discount(:'spanner_line', 'PERCENT', 10, 'Scheme'))->>'net_payable')::numeric = 36050.00,
+            'extra 10% item discount on top of 5% bill discount → net payable ₹36,050');
+SELECT t.ok((SELECT (i->>'avgCost')::numeric FROM jsonb_array_elements((public.owner_stock_overview())->'items') i
+              WHERE i->>'sku' = 'STN-CS-1724') = 595, 'net cost per spanner set now (35,000 − 3,500 − 1,750) ÷ 50 = ₹595');
+SELECT t.ok(EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_purchases_month(app.today_ist() - 2)) x
+                     WHERE x->>'vendor_invoice_no' = 'KTD/2026/7781' AND jsonb_array_length(x->'lines') = 1
+                       AND (x->'lines'->0->>'item_discount_amount')::numeric = 3500
+                       AND x->'lines'->0->>'sku_code' = 'STN-CS-1724'),
+            'monthly purchase register lists the invoice with item code, name and item discount');
+SELECT public.owner_update_purchase('c0000000-0000-0000-0000-000000000001', jsonb_build_object(
+  'lorryReceiptNo', 'LR-991',
+  'lines', jsonb_build_array(jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'STN-CS-1724'),
+           'uomCode', 'BOX', 'qty', 8, 'gstRate', 18, 'unitBasePrice', 3500, 'unitInclPrice', 4130,
+           'discountType', 'PERCENT', 'discountValue', 10)))) AS ed \gset
+SELECT t.ok((:'ed'::jsonb->>'taxable_total')::numeric = 28000 AND (:'ed'::jsonb->>'grand_total')::numeric = 33040
+            AND :'ed'::jsonb->>'lorry_receipt_no' = 'LR-991', 'purchase edited: 10 → 8 BOX, totals recomputed to ₹33,040');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels il JOIN products p ON p.id = il.product_id
+              WHERE il.warehouse_id = :WHA AND p.sku_code = 'STN-CS-1724') = 100, 'stock re-posted after edit: 110 − 10 pcs = 100');
+SELECT t.ok((:'ed'::jsonb->'lines'->0->>'item_discount_amount')::numeric = 2800
+            AND (:'ed'::jsonb->>'net_payable')::numeric = 28840, 'item discount kept through the edit; net payable ₹28,840');
+SELECT t.ok(((public.owner_set_stock(:WHA, (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 9000, 'ADJUST_AUDIT', 'cycle count'))->>'delta')::numeric = 999,
+            'owner sets a stock count (8001 → 9000); difference posted');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels il JOIN products p ON p.id = il.product_id
+              WHERE il.warehouse_id = :WHA AND p.sku_code = 'FIS-SX8') = 9000, 'stock count applied');
+SELECT public.owner_set_purchase_discount('c0000000-0000-0000-0000-000000000001', 'PERCENT', 0);
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_purchases_month(app.today_ist() - 2)) x
+                             WHERE x->>'vendor_invoice_no' = 'KTD/2026/7781' AND (x->>'bill_discount_amount')::numeric <> 0),
+            'bill discount can be cleared (0)');
+
 -- =============================================================================
 \echo '── WhatsApp worker (service role, as used by the Edge Function)'
 -- =============================================================================
@@ -306,6 +346,9 @@ SELECT app.enqueue_eod_digest(); SELECT app.enqueue_eod_digest();
 SELECT t.ok((SELECT count(*) FROM notification_outbox WHERE event_type = 'EOD_DIGEST') = 1, 'EOD digest enqueued exactly once per day');
 SELECT t.ok((SELECT short_base FROM fin.v_transfer_shortages) = 2, 'transit shortage of 2 pcs recorded');
 SELECT t.ok((SELECT count(*) FROM audit_log WHERE table_name = 'public.stock_overrides') = 1, 'override usage audited');
+SELECT t.ok((SELECT count(*) FROM audit_log WHERE action = 'EDIT' AND row_id = 'c0000000-0000-0000-0000-000000000001') = 1,
+            'purchase edit audited (before/after kept)');
+SELECT t.ok((SELECT count(*) FROM audit_log WHERE table_name = 'fin.purchase_item_discounts') >= 2, 'item discounts audited');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_tables WHERE schemaname IN ('public','fin','secure') AND NOT rowsecurity), 'RLS enabled on every table');
 SELECT t.ok(NOT EXISTS (
