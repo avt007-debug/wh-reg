@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   breakdown, createDispatchSchema, documentTotals, formatBreakdown, formatINR, fromBase, fromInclusive,
-  isConsistent, isValidGstin, isValidVehicleNo, purchaseLine, round, saleLine, splitTax,
+  isConsistent, isValidGstin, splitByGst, isValidVehicleNo, purchaseLine, round, saleLine, splitTax,
 } from './index.js';
 
 // Numbers here are deliberately the SAME as db/tests/rls_and_rules_test.sql,
@@ -93,5 +93,21 @@ describe('dispatch contract', () => {
     const ok = createDispatchSchema.parse({ ...base, transportMode: 'TRANSPORTER', vehicleRegNo: 'ka 01 ab 1234', driverPhone: '+91 98450 12345' });
     expect(ok.vehicleRegNo).toBe('KA01AB1234');
     expect(ok.driverPhone).toBe('9845012345');
+  });
+});
+
+describe('₹ discount and GST / Non-GST split', () => {
+  it('matches the database for a ₹ discount line', () => {
+    const l = saleLine(10, 2, 0, 18, 2);
+    expect([l.taxable, l.tax, l.total, l.discount]).toEqual([18, 3.24, 21.24, 2]);
+  });
+  it('purchase line with a bill discount', () => {
+    const l = purchaseLine(10, 100, 18, 50);
+    expect([l.taxable, l.tax, l.total]).toEqual([950, 171, 1121]);
+  });
+  it('splits lines by GST rate', () => {
+    const s = splitByGst([{ gst_rate: 18, line_taxable: 18, line_total: 21.24 }, { gst_rate: 0, line_taxable: 300, line_total: 300 }]);
+    expect(s.gst).toEqual({ lines: 1, taxable: 18, tax: 3.24, total: 21.24 });
+    expect(s.nonGst).toEqual({ lines: 1, taxable: 300, tax: 0, total: 300 });
   });
 });

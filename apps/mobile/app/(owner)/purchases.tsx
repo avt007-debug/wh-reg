@@ -13,9 +13,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
-import { formatINR, fromBase, type UnitPrice } from '@wh/shared';
+import { formatINR, fromBase, splitByGst, type UnitPrice } from '@wh/shared';
 import { q, rpc } from '../../src/api/client';
 import type { ProductHit } from '../../src/api/types';
+import { GstSplitRows, GstTag } from '../../src/components/GstSplit';
 import { ItemPicker } from '../../src/components/ItemPicker';
 import { PriceGstField } from '../../src/components/PriceGstField';
 import { Button, Card, Chips, Field, Label, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
@@ -31,6 +32,7 @@ type DiscType = 'PERCENT' | 'AMOUNT';
 interface Line {
   id: string; line_no: number; product_id: string; sku_code: string; name: string; uom: string; qty: number; qty_base: number;
   hsn_code: string | null; gst_rate: number; unit_base_price: number; unit_incl_price: number; line_taxable: number; line_total: number;
+  discount_amount: number; mrp: number | null;
   item_discount_type: DiscType | null; item_discount_value: number | null; item_discount_amount: number; effective_unit_cost_base: number | null;
 }
 interface Purchase {
@@ -96,12 +98,14 @@ export default function OwnerPurchases() {
         { header: 'Freight', kind: 'money', width: 12 }, { header: 'Billed total', kind: 'money', width: 14 },
         { header: 'Bill discount', width: 14 }, { header: 'Total extra discount', kind: 'money', width: 18 }, { header: 'Net payable', kind: 'money', width: 14 },
         { header: 'Status', width: 12 }, { header: 'Entered by', width: 22 }, { header: 'Approved by', width: 18 },
+        { header: 'GST billed (incl. GST)', kind: 'money', width: 20 }, { header: 'Non-GST billed', kind: 'money', width: 16 },
       ],
       rows: rows.map((p) => [
         p.vendor_invoice_date, p.vendor_invoice_no, p.vendor_name, p.vendor_gstin, p.warehouse_name, p.lorry_receipt_no,
         p.lines.length, n(p.taxable_total), n(p.tax_total), n(p.freight_amount), n(p.grand_total),
         discLabel(p.bill_discount_type, p.bill_discount_value), n(p.total_discount), n(p.net_payable),
         p.status === 'PENDING' ? 'Waiting' : 'Approved', p.entered_by, p.approved_by,
+        splitByGst(p.lines).gst.total, splitByGst(p.lines).nonGst.total,
       ]),
     },
     {
@@ -111,12 +115,15 @@ export default function OwnerPurchases() {
         { header: 'Warehouse', width: 14 }, { header: 'Item code', width: 16 }, { header: 'Item name', width: 34 },
         { header: 'Qty', kind: 'number', width: 8 }, { header: 'Unit', width: 7 }, { header: 'Rate excl. GST', kind: 'money', width: 14 },
         { header: 'GST %', kind: 'number', width: 7 }, { header: 'Taxable', kind: 'money', width: 13 }, { header: 'Line total', kind: 'money', width: 13 },
-        { header: 'Item discount', width: 13 }, { header: 'Item discount ₹', kind: 'money', width: 14 },
+        { header: 'Billed as', width: 10 }, { header: 'HSN', width: 9 }, { header: 'MRP', kind: 'money', width: 10 },
+        { header: 'Discount on bill ₹', kind: 'money', width: 16 },
+        { header: 'Your extra discount', width: 16 }, { header: 'Your extra discount ₹', kind: 'money', width: 18 },
         { header: 'Net cost / base unit', kind: 'money', width: 18 },
       ],
       rows: rows.flatMap((p) => p.lines.map((l) => [
         p.vendor_invoice_date, p.vendor_invoice_no, p.vendor_name, p.warehouse_name, l.sku_code, l.name,
         n(l.qty), l.uom, n(l.unit_base_price), n(l.gst_rate), n(l.line_taxable), n(l.line_total),
+        n(l.gst_rate) > 0 ? 'GST' : 'Non-GST', l.hsn_code, l.mrp != null ? n(l.mrp) : null, n(l.discount_amount),
         discLabel(l.item_discount_type, l.item_discount_value), n(l.item_discount_amount),
         l.effective_unit_cost_base != null ? n(l.effective_unit_cost_base) : null,
       ])),
@@ -146,6 +153,7 @@ export default function OwnerPurchases() {
       ) : null}
 
       <Card title={`${whName} · ${approved.length} approved invoice(s)`}>
+        <GstSplitRows {...splitByGst(approved.flatMap((p) => p.lines))} />
         <Row left="Billed (incl. GST + freight)" right={formatINR(billed)} />
         <Row left="Your extra discounts" right={formatINR(disc)} sub="per-item + per-bill · only you can see this" />
         <Row left="Net payable after discount" right={formatINR(net)} />
@@ -187,8 +195,10 @@ function InvoiceCard({ p, onEdit, actions }: { p: Purchase; onEdit: () => void; 
           <View style={{ flex: 1 }}>
             <Text style={{ color: t.text }}>{l.name}</Text>
             <Text style={{ color: t.textMuted, fontSize: 12 }}>
-              {l.sku_code} · {n(l.qty)} {l.uom} × {formatINR(n(l.unit_base_price))} + {n(l.gst_rate)}% GST
+              {l.sku_code}{l.hsn_code ? ` · HSN ${l.hsn_code}` : ''} · {n(l.qty)} {l.uom} × {formatINR(n(l.unit_base_price))}
+              {n(l.discount_amount) ? ` − ${formatINR(n(l.discount_amount))} disc.` : ''}{l.mrp != null ? ` · MRP ${formatINR(n(l.mrp))}` : ''}
             </Text>
+            <GstTag rate={l.gst_rate} />
             {n(l.item_discount_amount) > 0 ? (
               <Text style={{ color: t.good, fontSize: 12 }}>
                 Extra discount {discLabel(l.item_discount_type, l.item_discount_value)} = −{formatINR(n(l.item_discount_amount))}
@@ -199,6 +209,7 @@ function InvoiceCard({ p, onEdit, actions }: { p: Purchase; onEdit: () => void; 
         </View>
       ))}
 
+      <GstSplitRows {...splitByGst(p.lines)} />
       <Row left="Billed total" right={formatINR(n(p.grand_total))}
         sub={`taxable ${formatINR(n(p.taxable_total))} · GST ${formatINR(n(p.tax_total))}${n(p.freight_amount) ? ` · freight ${formatINR(n(p.freight_amount))}` : ''}`} />
       {n(p.total_discount) > 0 ? (
@@ -217,7 +228,8 @@ interface EdLine {
   uoms: { code: string; factor: number; displayName?: string }[];
   uom: string; qty: string; gstRate: number; price: UnitPrice | null; hsn: string | null;
   discType: DiscType | null; discValue: string; discReason: string;
-  orig?: { uom: string; qty: number; base: number; gst: number; discType: DiscType | null; discValue: number };
+  billDisc: string; mrp: string;
+  orig?: { uom: string; qty: number; base: number; gst: number; discType: DiscType | null; discValue: number; billDisc: number; mrp: number | null; hsn: string | null };
 }
 
 const toIsoDate = (d: string) => {
@@ -258,7 +270,9 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
       uom: l.uom, qty: String(n(l.qty)), gstRate: n(l.gst_rate), hsn: l.hsn_code,
       price: { base: n(l.unit_base_price), inclusive: n(l.unit_incl_price), tax: n(l.unit_incl_price) - n(l.unit_base_price) },
       discType: l.item_discount_type, discValue: l.item_discount_value ? String(n(l.item_discount_value)) : '', discReason: '',
-      orig: { uom: l.uom, qty: n(l.qty), base: n(l.unit_base_price), gst: n(l.gst_rate), discType: l.item_discount_type, discValue: n(l.item_discount_value) },
+      billDisc: n(l.discount_amount) ? String(n(l.discount_amount)) : '', mrp: l.mrp != null ? String(n(l.mrp)) : '',
+      orig: { uom: l.uom, qty: n(l.qty), base: n(l.unit_base_price), gst: n(l.gst_rate), discType: l.item_discount_type, discValue: n(l.item_discount_value),
+              billDisc: n(l.discount_amount), mrp: l.mrp != null ? n(l.mrp) : null, hsn: l.hsn_code },
     })));
   }, [p]);
 
@@ -276,18 +290,20 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
     setLines((ls) => [...ls, {
       key: `new-${Date.now()}`, productId: h.id, sku: h.sku_code, name: h.name, uoms: h.uoms, uom: base, qty: '',
       gstRate: n(h.default_gst_rate), hsn: h.hsn_code, price: null, discType: null, discValue: '', discReason: '',
+      billDisc: '', mrp: h.mrp != null ? String(n(h.mrp)) : '',
     }]);
   };
 
   const structural = !!p && (lines.length !== p.lines.length || lines.some((l) => !l.orig
-    || l.orig.uom !== l.uom || l.orig.qty !== Number(l.qty) || l.orig.gst !== l.gstRate || l.orig.base !== (l.price?.base ?? -1)));
+    || l.orig.uom !== l.uom || l.orig.qty !== Number(l.qty) || l.orig.gst !== l.gstRate || l.orig.base !== (l.price?.base ?? -1)
+    || l.orig.billDisc !== (Number(l.billDisc) || 0) || l.orig.mrp !== (l.mrp === '' ? null : Number(l.mrp)) || (l.orig.hsn ?? '') !== (l.hsn ?? '')));
   const lineDiscChanged = (l: EdLine) => !!l.orig
     && ((l.discType ?? null) !== (l.orig.discType ?? null) || Number(l.discValue || 0) !== l.orig.discValue);
 
   const linesValid = lines.length > 0 && lines.every((l) => Number(l.qty) > 0 && l.price && l.price.base >= 0);
   const isoDate = toIsoDate(invDate);
   const preview = lines.reduce((a, l) => {
-    const taxable = Math.round(Number(l.qty || 0) * (l.price?.base ?? 0) * 100) / 100;
+    const taxable = Math.round(Number(l.qty || 0) * (l.price?.base ?? 0) * 100) / 100 - (Number(l.billDisc) || 0);
     const tax = Math.round(taxable * l.gstRate) / 100;
     const d = l.discType === 'PERCENT' ? taxable * Number(l.discValue || 0) / 100 : l.discType === 'AMOUNT' ? Math.min(Number(l.discValue || 0), taxable) : 0;
     return { taxable: a.taxable + taxable, tax: a.tax + tax, disc: a.disc + d };
@@ -301,7 +317,8 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
       if (structural) {
         payload.lines = lines.map((l) => ({
           productId: l.productId, uomCode: l.uom, qty: Number(l.qty), hsnCode: l.hsn, gstRate: l.gstRate,
-          unitBasePrice: l.price!.base, unitInclPrice: l.price!.inclusive,
+          unitBasePrice: l.price!.base, unitInclPrice: l.price!.inclusive, discountAmount: Number(l.billDisc) || 0,
+          mrp: l.mrp === '' ? null : Number(l.mrp),
           discountType: l.discType, discountValue: Number(l.discValue || 0), discountReason: l.discReason || null,
         }));
       }
@@ -360,6 +377,13 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
               <PriceGstField key={`${l.key}-${l.uom}`} gstRate={l.gstRate} slabs={rates.length ? rates : [l.gstRate]}
                 onRateChange={(r) => upd(i, { gstRate: r, price: l.price ? fromBase(l.price.base, r) : null })}
                 value={l.price} onChange={(pr) => upd(i, { price: pr })} unitLabel={l.uom} />
+              <GstTag rate={l.gstRate} />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Field label="HSN code" value={l.hsn ?? ''} keyboardType="number-pad" maxLength={8} onChangeText={(v) => upd(i, { hsn: v.replace(/\D/g, '') || null })} />
+                <Field label={`MRP / ${l.uom}`} keyboardType="decimal-pad" value={l.mrp} onChangeText={(v) => upd(i, { mrp: v })} />
+              </View>
+              <Field label="Discount ₹ printed on the vendor's bill (this line)" keyboardType="decimal-pad" value={l.billDisc}
+                onChangeText={(v) => upd(i, { billDisc: v })} placeholder="0" />
               <Label>Extra discount on this item (only you see this)</Label>
               <Chips options={['NONE', 'PERCENT', 'AMOUNT'] as const} value={l.discType ?? 'NONE'}
                 onChange={(v) => upd(i, { discType: v === 'NONE' ? null : v, discValue: v === 'NONE' ? '' : l.discValue })}

@@ -6,8 +6,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import {Text} from 'react-native';
-import { documentTotals, formatINR, purchaseLine, type UnitPrice } from '@wh/shared';
+import { Text, View } from 'react-native';
+import { documentTotals, formatINR, purchaseLine, splitByGst, type UnitPrice } from '@wh/shared';
 import { q, rpc, uploadPurchaseDoc } from '../../src/api/client';
 import { supabase } from '../../src/lib/supabase';
 import { toUoms, type Me, type Party, type ProductHit } from '../../src/api/types';
@@ -15,12 +15,13 @@ import { ItemPicker } from '../../src/components/ItemPicker';
 import { PartyPicker } from '../../src/components/PartyPicker';
 import { PriceGstField } from '../../src/components/PriceGstField';
 import { QtyUomField } from '../../src/components/QtyUomField';
+import { GstSplitRows, GstTag } from '../../src/components/GstSplit';
 import { Button, Card, Field, Row, Screen } from '../../src/components/ui';
 import { newClientTxnId, todayIST } from '../../src/lib/ids';
 import { notify } from '../../src/lib/dialogs';
 import { useTheme } from '../../src/theme';
 
-interface Line { product: ProductHit; uomCode: string; qty: string; gstRate: number; price: UnitPrice | null; hsn: string }
+interface Line { product: ProductHit; uomCode: string; qty: string; gstRate: number; price: UnitPrice | null; hsn: string; discount: string; mrp: string }
 
 export default function Inward() {
   const t = useTheme();
@@ -36,7 +37,11 @@ export default function Inward() {
   const [picking, setPicking] = useState(false);
 
   const me = useQuery({ queryKey: ['me'], queryFn: () => rpc<Me>('me') });
-  const amounts = lines.map((l) => purchaseLine(Number(l.qty) || 0, l.price?.base ?? 0, l.gstRate));
+  const amounts = lines.map((l) => {
+    try { return purchaseLine(Number(l.qty) || 0, l.price?.base ?? 0, l.gstRate, Number(l.discount) || 0); }
+    catch { return purchaseLine(0, 0, l.gstRate); }
+  });
+  const split = splitByGst(lines.map((l, i) => ({ gst_rate: l.gstRate, line_taxable: amounts[i]!.taxable, line_total: amounts[i]!.total })));
   // Preview only — the server derives IGST vs CGST+SGST from the vendor GSTIN.
   const interstate = !!vendor?.state_code && !!me.data?.warehouse_state && vendor.state_code !== me.data.warehouse_state;
   const totals = documentTotals(amounts, interstate);
@@ -60,6 +65,7 @@ export default function Inward() {
           lines: lines.map((l) => ({
             productId: l.product.id, uomCode: l.uomCode, qty: Number(l.qty), gstRate: l.gstRate,
             unitBasePrice: l.price!.base, unitInclPrice: l.price!.inclusive, hsnCode: l.hsn || undefined,
+            discountAmount: Number(l.discount) || 0, mrp: l.mrp ? Number(l.mrp) : undefined,
           })),
         },
       });
@@ -74,7 +80,7 @@ export default function Inward() {
   });
 
   const update = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const valid = !!vendor && invoiceNo.trim().length > 0 && lines.length > 0 && lines.every((l) => Number(l.qty) > 0 && l.price);
+  const valid = !!vendor && invoiceNo.trim().length > 0 && lines.length > 0 && lines.every((l, i) => Number(l.qty) > 0 && l.price && (Number(l.discount) || 0) <= amounts[i]!.gross);
 
   return (
     <Screen>
@@ -88,11 +94,17 @@ export default function Inward() {
 
       {lines.map((l, i) => (
         <Card key={`${l.product.id}-${i}`} title={l.product.name}>
+          <GstTag rate={l.gstRate} />
           <QtyUomField uoms={toUoms(l.product)} uomCode={l.uomCode} onUomChange={(c) => update(i, { uomCode: c })}
             qty={l.qty} onQtyChange={(q) => update(i, { qty: q })} />
           <Field label="HSN code" value={l.hsn} onChangeText={(v) => update(i, { hsn: v })} keyboardType="number-pad" />
           <PriceGstField gstRate={l.gstRate} slabs={(slabs.data ?? []).map((s) => s.rate)} onRateChange={(r) => update(i, { gstRate: r })}
             value={l.price} onChange={(p) => update(i, { price: p })} unitLabel={l.uomCode} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Field label="Discount ₹ on bill (this line)" keyboardType="decimal-pad" value={l.discount} onChangeText={(v) => update(i, { discount: v })} placeholder="0"
+              error={(Number(l.discount) || 0) > amounts[i]!.gross ? 'More than the line value' : undefined} />
+            <Field label={`MRP / ${l.uomCode}`} keyboardType="decimal-pad" value={l.mrp} onChangeText={(v) => update(i, { mrp: v })} />
+          </View>
           <Row left="Line total (incl. GST)" right={formatINR(amounts[i]!.total)} />
           <Button title="Remove" kind="secondary" onPress={() => setLines((ls) => ls.filter((_, j) => j !== i))} />
         </Card>
@@ -100,6 +112,8 @@ export default function Inward() {
       <Button title="+ Add item" kind="secondary" onPress={() => setPicking(true)} />
 
       <Card title="Total landed cost">
+        <GstSplitRows gst={split.gst} nonGst={split.nonGst} />
+        {totals.discount ? <Row left="Discount on bill" right={`−${formatINR(totals.discount)}`} /> : null}
         <Row left="Base purchase value (excl. GST)" right={formatINR(totals.taxable)} />
         {interstate
           ? <Row left="IGST" right={formatINR(totals.igst)} />
@@ -111,6 +125,7 @@ export default function Inward() {
       <ItemPicker visible={picking} onClose={() => setPicking(false)}
         onPick={(p) => setLines((ls) => [...ls, {
           product: p, uomCode: p.uoms[0]?.code ?? 'PCS', qty: '', gstRate: p.default_gst_rate, price: null, hsn: p.hsn_code ?? '',
+          discount: '', mrp: p.mrp != null ? String(Number(p.mrp) * Number(p.uoms[0]?.factor ?? 1)) : '',
         }])} />
     </Screen>
   );

@@ -15,6 +15,7 @@ export default function OwnerLayout() {
       <Tabs.Screen name="reorder" options={{ title: 'Reorder', tabBarIcon: ({ color, size }) => <Ionicons name="cart" color={color as string} size={size} /> }} />
       <Tabs.Screen name="stock" options={{ title: 'Stock', tabBarIcon: ({ color, size }) => <Ionicons name="cube" color={color as string} size={size} /> }} />
       <Tabs.Screen name="purchases" options={{ title: 'Purchases', tabBarBadge: nPending || undefined, tabBarIcon: ({ color, size }) => <Ionicons name="receipt" color={color as string} size={size} /> }} />
+      <Tabs.Screen name="sales" options={{ title: 'Sales', tabBarIcon: ({ color, size }) => <Ionicons name="pricetags" color={color as string} size={size} /> }} />
       <Tabs.Screen name="insights" options={{ title: 'Insights', tabBarIcon: ({ color, size }) => <Ionicons name="bulb" color={color as string} size={size} /> }} />
       <Tabs.Screen name="employees" options={{ title: 'Employees', tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color as string} size={size} /> }} />
       <Tabs.Screen name="team" options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={color as string} size={size} /> }} />

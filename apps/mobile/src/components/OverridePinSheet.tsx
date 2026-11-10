@@ -10,8 +10,10 @@ import { ApiError, rpc } from '../api/client';
 import { useTheme } from '../theme';
 import { Button, Card, Field, Label, Row } from './ui';
 
-export function OverridePinSheet({ shortfalls, onApproved, onCancel }: {
+export function OverridePinSheet({ shortfalls, onApproved, onCancel, warehouseId }: {
   shortfalls: StockShortfall[] | null; onApproved: (overrideId: string) => void; onCancel: () => void;
+  /** owner entries: the warehouse the bill is for (staff are pinned to their own) */
+  warehouseId?: string;
 }) {
   const t = useTheme();
   const [pin, setPin] = useState('');
@@ -22,7 +24,7 @@ export function OverridePinSheet({ shortfalls, onApproved, onCancel }: {
   async function submit() {
     setBusy(true); setErr(null);
     try {
-      const r = await rpc<{ ok: boolean; overrideId?: string }>('request_stock_override', { p_pin: pin, p_reason: reason });
+      const r = await rpc<{ ok: boolean; overrideId?: string }>('request_stock_override', { p_pin: pin, p_reason: reason, ...(warehouseId ? { p_warehouse: warehouseId } : {}) });
       if (!r.ok || !r.overrideId) { setErr('Incorrect PIN'); return; }
       setPin(''); setReason('');
       onApproved(r.overrideId);

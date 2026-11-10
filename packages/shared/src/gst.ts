@@ -11,7 +11,7 @@
  */
 
 /** Slabs offered by default. Real list comes from GET /gst-rates (owner can toggle). */
-export const DEFAULT_GST_SLABS = [0, 5, 12, 18, 28] as const;
+export const DEFAULT_GST_SLABS = [0, 5, 18, 40] as const;   // GST 2.0 (from 22-Sep-2025)
 
 /** Postgres-compatible round (half away from zero) without binary-float surprises. */
 export function round(x: number, dp: number): number {
@@ -61,21 +61,41 @@ export interface LineAmounts {
   total: number;      // incl. GST
 }
 
-/** Purchase line: no line discount (owner's private discount is applied separately). */
-export function purchaseLine(qty: number, unitBase: number, gstRate: number): LineAmounts {
-  return saleLine(qty, unitBase, 0, gstRate);
+/** Purchase line: optional ₹ discount printed on the vendor's bill (the owner's private discount is separate). */
+export function purchaseLine(qty: number, unitBase: number, gstRate: number, discountAmount = 0): LineAmounts {
+  return saleLine(qty, unitBase, 0, gstRate, discountAmount);
 }
 
-/** Dispatch line — mirrors dispatch_items generated columns exactly. */
-export function saleLine(qty: number, unitBase: number, discountPct: number, gstRate: number): LineAmounts {
+/** Dispatch line — mirrors dispatch_items generated columns exactly (discount % and/or ₹ amount). */
+export function saleLine(qty: number, unitBase: number, discountPct: number, gstRate: number, discountAmount = 0): LineAmounts {
   assertNonNegative(qty, 'quantity');
+  assertNonNegative(discountAmount, 'discount amount');
   if (discountPct < 0 || discountPct > 100) throw new RangeError('discount % must be 0–100');
-  const unitFinal = round4(unitBase * (1 - discountPct / 100));
+  const afterPct = round4(unitBase * (1 - discountPct / 100));
   const gross = round2(qty * unitBase);
-  const taxable = round2(qty * unitFinal);
+  const amount = round2(discountAmount);
+  const taxable = round2(round2(qty * afterPct) - amount);
+  const unitFinal = amount === 0 ? afterPct : qty > 0 ? round4(taxable / qty) : 0;
   const tax = round2((taxable * gstRate) / 100);
   return { gross, discount: round2(gross - taxable), unitFinal, taxable, tax, total: round2(taxable + tax) };
 }
+
+export interface GstBucket { lines: number; taxable: number; tax: number; total: number }
+/**
+ * Split bill lines into GST-billed (GST % above 0) and Non-GST-billed (0 %).
+ * Works for sales and purchases alike.
+ */
+export function splitByGst<T extends { gst_rate: number | string; line_taxable: number | string; line_total: number | string }>(lines: T[]) {
+  const empty = (): GstBucket => ({ lines: 0, taxable: 0, tax: 0, total: 0 });
+  const gst = empty(), nonGst = empty();
+  for (const l of lines) {
+    const b = Number(l.gst_rate) > 0 ? gst : nonGst;
+    const taxable = Number(l.line_taxable), total = Number(l.line_total);
+    b.lines += 1; b.taxable = round2(b.taxable + taxable); b.total = round2(b.total + total); b.tax = round2(b.total - b.taxable);
+  }
+  return { gst, nonGst };
+}
+export const isGstBilled = (gstRate: number | string) => Number(gstRate) > 0;
 
 export interface TaxSplit { cgst: number; sgst: number; igst: number }
 

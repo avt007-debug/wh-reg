@@ -8,7 +8,9 @@ import { WarehouseBars, type TrendPoint } from '../../src/components/WarehouseBa
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
 import { todayIST } from '../../src/lib/ids';
 import { useOwnerWarehouse, useWarehouses } from '../../src/lib/warehouse';
-import { monthLabel, monthStart } from '../../src/lib/dates';
+import { dateTimeIST, hoursLabel, monthLabel, monthStart, timeIST } from '../../src/lib/dates';
+import { Text } from 'react-native';
+import { useTheme } from '../../src/theme';
 
 interface TopRow { product_id: string; sku_code?: string; product_name: string; units_base: number; revenue_excl_gst: number; rank_by_revenue: number }
 
@@ -66,6 +68,8 @@ export default function Dashboard() {
           names={Object.fromEntries((whs.data ?? []).map((w) => [w.code, w.name]))} />
       </Card>
 
+      <TodayAttendance />
+
       <Card title={`Top sellers by revenue · ${whName}`}>
         <Chips options={['This month', 'Last 12 months'] as const} value={topPeriod} onChange={setTopPeriod} />
         {topRows.map((r, _i, all) => (
@@ -76,5 +80,42 @@ export default function Dashboard() {
         {!topRows.length ? <Label muted>{top.isLoading ? 'Loading…' : 'No sales in this period yet'}</Label> : null}
       </Card>
     </Screen>
+  );
+}
+
+interface TodayRow { id: string; full_name: string; login_id: string; warehouse_name: string | null; first_in: string | null; last_out: string | null; open_since: string | null; shifts: number; hours: number }
+
+/** Today's clock-in / clock-out for every employee in the selected warehouse. */
+function TodayAttendance() {
+  const t = useTheme();
+  const wh = useOwnerWarehouse((s) => s.id);
+  const q = useQuery({ queryKey: ['attendance-today', wh], queryFn: () => rpc<TodayRow[]>('owner_attendance_today', { p_warehouse: wh }), refetchInterval: 60_000 });
+  const rows = q.data ?? [];
+  const inNow = rows.filter((r) => r.open_since).length;
+  return (
+    <Card title={`Today's attendance · ${inNow} of ${rows.length} clocked in`}>
+      {rows.map((r) => {
+        const status = r.open_since ? '🟢 In' : r.first_in ? '⚪ Out' : '🔴 Not in';
+        const startedEarlier = !!r.first_in && new Date(new Date(r.first_in).getTime() + 5.5 * 3600_000).toISOString().slice(0, 10) !== todayIST();
+        return (
+          <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderBottomWidth: 0.5, borderColor: t.border }}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ color: t.text, fontWeight: '600' }}>{r.full_name}</Text>
+              <Text style={{ color: t.textMuted, fontSize: 12 }}>{r.warehouse_name ?? 'All warehouses'}{Number(r.shifts) > 1 ? ` · ${r.shifts} shifts` : ''}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: 2 }}>
+              <Text style={{ color: t.text, fontVariant: ['tabular-nums'] }}>
+                {r.first_in ? `In ${startedEarlier ? dateTimeIST(r.first_in) : timeIST(r.first_in)}` : '—'}
+                {'  ·  '}{r.open_since ? 'still in' : r.last_out ? `Out ${timeIST(r.last_out)}` : '—'}
+              </Text>
+              <Text style={{ color: r.open_since ? t.good : r.first_in ? t.textMuted : t.danger, fontSize: 12, fontWeight: '600' }}>
+                {status}{r.first_in ? ` · ${hoursLabel(Number(r.hours))}` : ''}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+      {!rows.length ? <Label muted>{q.isLoading ? 'Loading…' : 'No employees in this warehouse'}</Label> : null}
+    </Card>
   );
 }
