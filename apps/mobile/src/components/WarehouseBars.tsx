@@ -14,7 +14,7 @@ export interface TrendPoint { bucket: string; warehouse_code: string; revenue_ex
 
 const compact = (n: number) => (n >= 1e7 ? `${(n / 1e7).toFixed(1)}Cr` : n >= 1e5 ? `${(n / 1e5).toFixed(1)}L` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
 
-export function WarehouseBars({ points, warehouses, buckets: fixed, formatBucket = (b) => b.slice(5), formatAxis, names = {}, colorCodes }: {
+export function WarehouseBars({ points, warehouses, buckets: fixed, formatBucket = (b) => b.slice(5), formatAxis, names = {}, colorCodes, showTotal = true }: {
   points: TrendPoint[]; warehouses: string[];
   /** code → display name for the legend, e.g. { CTR: 'Chittoor' } */
   names?: Record<string, string>;
@@ -22,6 +22,8 @@ export function WarehouseBars({ points, warehouses, buckets: fixed, formatBucket
   formatAxis?: (bucket: string) => string;
   /** every warehouse code, so a warehouse keeps its colour when the chart shows only some */
   colorCodes?: string[];
+  /** false when the series should not be added up (e.g. sales vs collected) */
+  showTotal?: boolean;
   /** Show these periods even when they have no sales (e.g. the last 12 months). */
   buckets?: string[]; formatBucket?: (bucket: string) => string;
 }) {
@@ -78,7 +80,7 @@ export function WarehouseBars({ points, warehouses, buckets: fixed, formatBucket
       />
       {buckets.slice(-6).reverse().map((b) => (
         <Row key={b} left={formatBucket(b)}
-          right={formatINR(points.filter((p) => p.bucket === b).reduce((a, p) => a + p.revenue_excl_gst, 0))}
+          right={showTotal ? formatINR(points.filter((p) => p.bucket === b).reduce((a, p) => a + p.revenue_excl_gst, 0)) : undefined}
           sub={warehouses.map((w) => `${names[w] ?? w} ${compact(points.find((p) => p.bucket === b && p.warehouse_code === w)?.revenue_excl_gst ?? 0)}`).join(' · ')} />
       ))}
     </View>

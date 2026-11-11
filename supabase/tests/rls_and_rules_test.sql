@@ -540,6 +540,37 @@ SELECT t.ok((public.owner_purchase_detail((:'op'::jsonb->>'id')::uuid)->>'credit
             AND (public.owner_purchase_detail((:'op'::jsonb->>'id')::uuid)->>'grand_total')::numeric = 252.40,
             'editing keeps credit % and discount %: (₹200 − 10%) + 18% + loading ₹40 = ₹252.40; credit 5% of ₹180 = ₹9');
 
+\echo '── Customer ledger & payments'
+:AS_OWNER
+SELECT id AS lc FROM customers WHERE name = 'Charges Test' \gset
+RESET ROLE;
+UPDATE dispatches SET invoice_date = app.today_ist() - 40 WHERE customer_id = :'lc';
+:AS_OWNER
+SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(), 'warehouseId', :WHA, 'customerId', :'lc',
+  'lines', jsonb_build_array(jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS',
+           'qty', 1, 'unitBasePrice', 100, 'gstRate', 0)))) \g /dev/null
+:AS_EMPB
+SELECT t.ok((public.record_customer_payment(jsonb_build_object('customerId', :'lc', 'amount', 200, 'mode', 'UPI', 'reference', 'UTR123'))->>'balance')::numeric = 362.40,
+            'any employee records a payment; balance = ₹462.40 + ₹100 − ₹200 = ₹362.40');
+SELECT t.throws($$SELECT public.record_customer_payment(jsonb_build_object('customerId', (SELECT id FROM customers LIMIT 1), 'amount', 10, 'paidOn', app.today_ist() + 1))$$,
+            'WH005', 'payment date cannot be in the future');
+SELECT t.throws($$SELECT public.owner_ledger()$$, 'WH002', 'employees cannot open the owner ledger');
+SELECT t.ok((SELECT (x->>'balance')::numeric FROM jsonb_array_elements(public.my_ledger()->'customers') x WHERE x->>'customer_id' = :'lc') = 362.40,
+            'employee ledger shows the customer''s pending balance');
+SELECT t.ok(jsonb_array_length(public.customer_statement(:'lc')->'entries') = 3, 'statement: 2 bills + 1 payment');
+:AS_EMPA
+SELECT t.ok((SELECT (x->>'outstanding')::numeric FROM jsonb_array_elements(public.my_ledger()->'my_bills') x WHERE (x->>'days_old')::int = 40) = 262.40,
+            'the old bill is paid first (FIFO): ₹462.40 − ₹200 = ₹262.40 still due on the bill Ravi entered');
+:AS_OWNER
+SELECT t.ok((SELECT (x->>'outstanding')::numeric = 262.40 AND x->>'responsible' = (SELECT full_name FROM users WHERE id = :EMPA)
+               FROM jsonb_array_elements(public.owner_ledger()->'late') x WHERE x->>'customer_id' = :'lc'),
+            'late payers: bill over 30 days, amount, and the employee responsible');
+SELECT t.ok((SELECT (x->>'overdue')::numeric FROM jsonb_array_elements(public.owner_ledger()->'customers') x WHERE x->>'customer_id' = :'lc') = 262.40
+            AND jsonb_array_length(public.owner_ledger()->'monthly') = 12 AND jsonb_array_length(public.owner_ledger()->'yearly') = 5,
+            'owner ledger: overdue per customer, 12 months and 5 financial years');
+SELECT t.ok((SELECT x->>'received_by' FROM jsonb_array_elements(public.owner_ledger()->'payments') x WHERE x->>'reference' = 'UTR123')
+            = (SELECT full_name FROM users WHERE id = :EMPB), 'payments show who received them');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================
