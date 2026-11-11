@@ -600,6 +600,30 @@ SELECT public.owner_set_sales_target(:EMPA, app.today_ist(), 0) \g /dev/null
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_sales_targets(app.today_ist())) x WHERE (x->>'user_id')::uuid = :EMPA AND x->>'target' IS NOT NULL),
             'setting 0 clears the target');
 
+\echo '── Material No. catalogue + lookup'
+RESET ROLE;
+SELECT t.ok((app.import_catalog('Tata Hand Tools', 'THT test', '[
+  {"code":"TAK002","name":"Allen Key : Set of 9\n(insulated)","unit":"pcs","gst":18,"hsn":"82041110","stdPkg":12,"moq":60,"price":471},
+  {"code":"HOE007_CENTENARY","name":"Hoe Centenary","gst":0,"hsn":"82011000","moq":10,"price":250.456,"weightKg":1.2},
+  {"code":"BAD CODE!","name":"x","gst":18,"price":1},
+  {"code":"GST7","name":"bad gst","gst":7,"price":1}]'::jsonb)->>'added')::int = 2, 'price list import adds valid rows');
+SELECT t.ok((SELECT default_selling_price = 250.46 AND default_gst_rate = 0 AND specs->>'moq_pcs' = '10' FROM products WHERE sku_code = 'HOE007_CENTENARY'),
+            'underscore codes allowed; price rounded to paise; 0% GST kept');
+SELECT t.ok((SELECT array_agg(uom_code || ':' || factor_to_base::int ORDER BY factor_to_base) FROM product_uoms u JOIN products p ON p.id = u.product_id WHERE p.sku_code = 'TAK002')
+            = ARRAY['PCS:1','PACK:12','CTN:60'], 'pack (std pkg) and carton (MOQ) units created');
+SELECT app.import_catalog('Tata Hand Tools', 'THT test', '[{"code":"tak002","name":"Allen Key set","gst":18,"hsn":"82041110","stdPkg":12,"moq":60,"price":480}]') AS reimp \gset
+SELECT t.ok((:'reimp'::jsonb->>'updated')::int = 1 AND (SELECT default_selling_price FROM products WHERE sku_code = 'TAK002') = 480
+            AND (SELECT count(*) FROM products WHERE sku_code = 'TAK002') = 1, 're-import updates the price instead of duplicating');
+:AS_EMPA
+SELECT t.ok(public.find_material('tak002')->0->>'sku_code' = 'TAK002' AND (public.find_material('tak002')->0->>'default_selling_price')::numeric = 480
+            AND public.find_material('tak002')->0->>'hsn_code' = '82041110' AND jsonb_array_length(public.find_material('tak002')->0->'uoms') = 3,
+            'employee types a Material No. (any case) → full item details');
+SELECT t.ok(public.find_material('HOE007')->0->>'sku_code' = 'HOE007_CENTENARY', 'partial code finds the item');
+SELECT t.ok(jsonb_array_length(public.find_material('HOE007%')) = 1 AND jsonb_array_length(public.find_material('')) = 0, 'wildcards ignored, empty → nothing');
+SELECT t.throws($$SELECT public.owner_import_catalog('X', 'x', '[]')$$, 'WH002', 'employees cannot import price lists');
+:AS_ANON
+SELECT t.throws($$SELECT public.find_material('TAK002')$$, '42501', 'anonymous cannot look up items');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

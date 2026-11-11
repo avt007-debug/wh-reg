@@ -25,6 +25,7 @@ import { useWarehouses } from '../lib/warehouse';
 import { useTheme } from '../theme';
 import { GstSplitRows, GstTag } from './GstSplit';
 import { ItemPicker } from './ItemPicker';
+import { MaterialEntry } from './MaterialEntry';
 import { OverridePinSheet } from './OverridePinSheet';
 import { PartyPicker } from './PartyPicker';
 import { QtyUomField } from './QtyUomField';
@@ -154,11 +155,20 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
     },
   });
 
+  const addProduct = (p: ProductHit) => {
+    const base = p.uoms.find((u) => Number(u.factor) === 1)?.code ?? p.uoms[0]?.code ?? 'PCS';
+    setLines((ls) => [...ls, {
+      product: p, uomCode: base, qty: '', hsn: p.hsn_code ?? '', gstRate: Number(p.default_gst_rate),
+      price: isSale && p.default_selling_price != null ? money(Number(p.default_selling_price)) : '',
+      discPct: '', creditPct: allCredit,
+    }]);
+  };
   const update = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const changeUom = (i: number, code: string) => {
+    // keep any price the user typed: convert it per piece, then to the new unit
     const l = lines[i]!;
-    const base = isSale ? l.product.default_selling_price : null;
-    update(i, { uomCode: code, price: base != null ? money(Number(base) * factorOf(l.product, code)) : l.price });
+    const perBase = l.price.trim() !== '' ? num(l.price) / factorOf(l.product, l.uomCode) : null;
+    update(i, { uomCode: code, price: perBase != null ? money(perBase * factorOf(l.product, code)) : l.price });
   };
   const pctOk = (s: string) => s.trim() === '' || (num(s) >= 0 && num(s) <= 100);
   const partyOk = partyMode === 'Existing' ? !!party : newName.trim().length >= 2 && gstinOk;
@@ -218,7 +228,9 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
               <View style={{ flex: 1, gap: 4 }}>
                 <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{i + 1}. {l.product.name}</Text>
-                <Label muted>{l.product.sku_code}</Label>
+                <Label muted>Material No. {l.product.sku_code}{l.product.brand ? ` · ${l.product.brand}` : ''}</Label>
+                {l.product.specification ? <Label muted>{l.product.specification}</Label> : null}
+                {isSale ? <Label muted>In stock: {Number(l.product.qty_on_hand)} {l.product.uoms.find((u) => Number(u.factor) === 1)?.code ?? 'PCS'}</Label> : null}
                 <GstTag rate={l.gstRate} />
               </View>
               <SmallButton title="Remove" kind="danger" onPress={() => setLines((ls) => ls.filter((_, j) => j !== i))} />
@@ -231,7 +243,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
               <Field label="Discount %" keyboardType="decimal-pad" value={l.discPct} onChangeText={(v) => update(i, { discPct: v })} placeholder="0"
                 error={!pctOk(l.discPct) ? '0–100' : undefined} />
             </View>
-            <Label>GST % (0% = Non-GST)</Label>
+            <Label>GST % (0% = Non-GST){Number(l.product.default_gst_rate) !== l.gstRate ? ` · price list says ${Number(l.product.default_gst_rate)}%` : ''}</Label>
             <Chips options={(slabs.data ?? []).map((s) => Number(s.rate))} value={l.gstRate} onChange={(r) => update(i, { gstRate: r })} format={(r) => `${r}%`} />
             {!isSale && owner ? (
               <Field label="Credit note % (credit for future purchases — only you see this)" keyboardType="decimal-pad" value={l.creditPct}
@@ -243,7 +255,8 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
           </Card>
         );
       })}
-      <Button title="＋ Add item" kind="secondary" onPress={() => setPicking(true)} />
+      <MaterialEntry onPick={addProduct} showPrice={isSale} />
+      <Button title="Search items by name" icon="search" kind="secondary" onPress={() => setPicking(true)} />
 
       <Card title="Extra charges">
         <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -279,15 +292,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
       <Button title={isSale ? 'Save sale' : owner ? 'Save purchase' : 'Send purchase for approval'} onPress={() => save.mutate(undefined)}
         busy={save.isPending} disabled={!valid} />
 
-      <ItemPicker visible={picking} onClose={() => setPicking(false)}
-        onPick={(p) => {
-          const base = p.uoms.find((u) => u.factor === 1)?.code ?? p.uoms[0]?.code ?? 'PCS';
-          setLines((ls) => [...ls, {
-            product: p, uomCode: base, qty: '', hsn: p.hsn_code ?? '', gstRate: Number(p.default_gst_rate),
-            price: isSale && p.default_selling_price != null ? money(Number(p.default_selling_price)) : '',
-            discPct: '', creditPct: allCredit,
-          }]);
-        }} />
+      <ItemPicker visible={picking} onClose={() => setPicking(false)} onPick={addProduct} />
       {isSale ? (
         <OverridePinSheet shortfalls={shortfalls} warehouseId={owner ? warehouseId : undefined}
           onCancel={() => setShortfalls(null)} onApproved={(id) => save.mutate(id)} />

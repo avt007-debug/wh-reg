@@ -11,7 +11,9 @@ export function QtyUomField({ uoms, uomCode, onUomChange, qty, onQtyChange }: {
   const n = Number(qty);
   return (
     <View style={{ gap: 8 }}>
-      <Chips options={uoms.map((x) => x.code)} value={uomCode} onChange={onUomChange} />
+      <Label>Units</Label>
+      <Chips options={uoms.map((x) => x.code)} value={uomCode} onChange={onUomChange}
+        format={(c) => { const f = Number(uoms.find((x) => x.code === c)?.factor ?? 1); return f === 1 ? c : `${c} (${f} ${base})`; }} />
       <Field label={`Quantity (${uomCode})`} keyboardType="decimal-pad" value={qty} onChangeText={onQtyChange} placeholder="0" />
       {u && u.factor !== 1 && n > 0 ? <Label muted>= {toBaseQty(n, u.factor)} {base}</Label> : null}
     </View>

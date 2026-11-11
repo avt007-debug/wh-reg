@@ -86,7 +86,7 @@ export function ItemEditor({ productId, visible, onClose, defaultBrandId }: {
   const close = () => { setLoadedFor(null); onClose(); };
   const ready = isNew ? loadedFor === 'new' : loadedFor === productId;
 
-  const codeOk = /^[A-Z0-9-]{2,24}$/.test(code.trim().toUpperCase());
+  const codeOk = /^[A-Z0-9][A-Z0-9_./-]{1,31}$/.test(code.trim().toUpperCase());
   const hsnOk = !hsn.trim() || /^[0-9]{4}([0-9]{2}){0,2}$/.test(hsn.trim());
   const packsOk = packs.every((p) => !p.code.trim() || (/^[A-Z]{2,6}$/.test(p.code.trim().toUpperCase()) && Number(p.factor) > 1));
 
@@ -127,7 +127,7 @@ export function ItemEditor({ productId, visible, onClose, defaultBrandId }: {
             <Card title="Item">
               <Field label="Item name" value={name} onChangeText={setName} placeholder="e.g. Claw Hammer 500g" />
               <Field label="Item code" value={code} autoCapitalize="characters" onChangeText={(v) => setCode(v.toUpperCase())}
-                placeholder="e.g. TAP-HM-500" error={code && !codeOk ? '2–24 letters, digits or -' : undefined} />
+                placeholder="e.g. TAP-HM-500" error={code && !codeOk ? '2–32 letters, digits or - _ . /' : undefined} />
               <Label>Company</Label>
               <Chips options={brandOpts} value={brandId ?? ''} onChange={(v) => setBrandId(v || null)}
                 format={(v) => (v ? brands.data?.find((b) => b.id === v)?.name ?? '' : 'None')} />
