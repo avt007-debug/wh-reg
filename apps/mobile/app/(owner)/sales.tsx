@@ -9,7 +9,7 @@ import { Modal, ScrollView, Text, View } from 'react-native';
 import { formatINR, splitByGst } from '@wh/shared';
 import { rpc } from '../../src/api/client';
 import { GstSplitRows, GstTag } from '../../src/components/GstSplit';
-import { SalesEntryForm } from '../../src/components/SalesEntryForm';
+import { BillForm } from '../../src/components/BillForm';
 import { Card, Field, Label, Row, Screen, SmallButton, Stat, Toolbar } from '../../src/components/ui';
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
 import { dateTimeIST, dmy, monthLong, monthStart } from '../../src/lib/dates';
@@ -28,6 +28,7 @@ interface Sale {
   customer_name: string; customer_gstin: string | null; customer_phone: string | null; is_interstate: boolean;
   taxable_total: number; discount_total: number; cgst_total: number; sgst_total: number; igst_total: number; grand_total: number;
   status: 'POSTED' | 'CANCELLED'; cancelled_reason: string | null; used_override: boolean;
+  loading_charges: number; transport_charges: number; other_charges: number;
   entered_by: string; entered_by_role: string; entered_at: string; lines: SaleLine[];
 }
 const n = (x: unknown) => Number(x ?? 0);
@@ -74,13 +75,15 @@ export default function Sales() {
         { header: 'Customer GSTIN', width: 18 }, { header: 'Warehouse', width: 13 }, { header: 'Entered by', width: 20 },
         { header: 'GST billed (incl. GST)', kind: 'money', width: 20 }, { header: 'Non-GST billed', kind: 'money', width: 16 },
         { header: 'Discount', kind: 'money', width: 11 }, { header: 'Taxable', kind: 'money', width: 13 },
+        { header: 'Extra charges', kind: 'money', width: 13 },
         { header: 'CGST', kind: 'money', width: 11 }, { header: 'SGST', kind: 'money', width: 11 }, { header: 'IGST', kind: 'money', width: 11 },
         { header: 'Invoice total', kind: 'money', width: 14 }, { header: 'Status', width: 11 },
       ],
       rows: rows.map((s) => {
         const sp = splitByGst(s.lines);
         return [s.invoice_date, s.invoice_no, s.customer_name, s.customer_gstin, s.warehouse_name, s.entered_by,
-          sp.gst.total, sp.nonGst.total, n(s.discount_total), n(s.taxable_total), n(s.cgst_total), n(s.sgst_total), n(s.igst_total),
+          sp.gst.total, sp.nonGst.total, n(s.discount_total), n(s.taxable_total),
+          n(s.loading_charges) + n(s.transport_charges) + n(s.other_charges), n(s.cgst_total), n(s.sgst_total), n(s.igst_total),
           n(s.grand_total), s.status === 'POSTED' ? 'Active' : `Cancelled: ${s.cancelled_reason ?? ''}`];
       }),
     },
@@ -90,13 +93,13 @@ export default function Sales() {
         { header: 'Invoice date', kind: 'date', width: 13 }, { header: 'Invoice no', width: 16 }, { header: 'Customer', width: 24 },
         { header: 'Customer GSTIN', width: 18 }, { header: 'Item code', width: 15 }, { header: 'Item name', width: 30 },
         { header: 'HSN', width: 9 }, { header: 'Qty', kind: 'number', width: 7 }, { header: 'Unit', width: 6 },
-        { header: 'MRP', kind: 'money', width: 10 }, { header: 'Price excl. GST', kind: 'money', width: 14 },
+        { header: 'Price excl. GST', kind: 'money', width: 14 }, { header: 'Discount %', kind: 'number', width: 10 },
         { header: 'Discount ₹', kind: 'money', width: 11 }, { header: 'Taxable', kind: 'money', width: 12 },
-        { header: 'GST %', kind: 'number', width: 7 }, { header: 'GST ₹', kind: 'money', width: 11 }, { header: 'Line total', kind: 'money', width: 12 },
+        { header: 'GST %', kind: 'number', width: 7 }, { header: 'GST ₹', kind: 'money', width: 11 }, { header: 'Total (MRP)', kind: 'money', width: 12 },
         { header: 'Billed as', width: 12 },
       ],
       rows: live.flatMap((s) => s.lines.map((l) => [s.invoice_date, s.invoice_no, s.customer_name, s.customer_gstin, l.sku_code, l.name,
-        l.hsn_code, n(l.qty), l.uom, l.mrp != null ? n(l.mrp) : null, n(l.unit_base_price), n(l.line_discount), n(l.line_taxable),
+        l.hsn_code, n(l.qty), l.uom, n(l.unit_base_price), n(l.discount_pct), n(l.line_discount), n(l.line_taxable),
         n(l.gst_rate), n(l.line_tax), n(l.line_total), n(l.gst_rate) > 0 ? 'GST' : 'Non-GST'])),
     },
     {
@@ -157,7 +160,7 @@ export default function Sales() {
                   <Text style={{ color: t.text }}>{l.name}</Text>
                   <Text style={{ color: t.textMuted, fontSize: 12 }}>
                     {l.sku_code}{l.hsn_code ? ` · HSN ${l.hsn_code}` : ''} · {n(l.qty)} {l.uom} × {formatINR(n(l.unit_base_price))}
-                    {n(l.line_discount) ? ` − ${formatINR(n(l.line_discount))} disc.` : ''}{l.mrp != null ? ` · MRP ${formatINR(n(l.mrp))}` : ''}
+                    {n(l.discount_pct) ? ` − ${n(l.discount_pct)}%` : n(l.line_discount) ? ` − ${formatINR(n(l.line_discount))} disc.` : ''} + {n(l.gst_rate)}% GST
                   </Text>
                   <GstTag rate={l.gst_rate} />
                 </View>
@@ -165,6 +168,11 @@ export default function Sales() {
               </View>
             ))}
             <GstSplitRows gst={sp.gst} nonGst={sp.nonGst} />
+            {n(s.loading_charges) + n(s.transport_charges) + n(s.other_charges) > 0 ? (
+              <Row left="Extra charges" right={formatINR(n(s.loading_charges) + n(s.transport_charges) + n(s.other_charges))}
+                sub={[n(s.loading_charges) && `loading ${formatINR(n(s.loading_charges))}`, n(s.transport_charges) && `transport ${formatINR(n(s.transport_charges))}`,
+                  n(s.other_charges) && `other ${formatINR(n(s.other_charges))}`].filter(Boolean).join(' · ')} />
+            ) : null}
             <Row left="Invoice total" sub={s.is_interstate ? `IGST ${formatINR(n(s.igst_total))}` : `CGST ${formatINR(n(s.cgst_total))} · SGST ${formatINR(n(s.sgst_total))}`}
               right={formatINR(n(s.grand_total))} />
           </Card>
@@ -179,7 +187,7 @@ export default function Sales() {
             <Text style={{ flex: 1, color: t.text, fontSize: 20, fontWeight: '700' }}>New sale</Text>
             <SmallButton title="Close" onPress={() => setAdding(false)} />
           </View>
-          <SalesEntryForm owner onSaved={() => setAdding(false)} />
+          <BillForm kind="sale" owner onSaved={() => setAdding(false)} />
         </ScrollView>
       </Modal>
     </Screen>

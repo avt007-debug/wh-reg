@@ -1,16 +1,13 @@
-/**
- * OUTWARD (Sales bill) entry for staff — see src/components/SalesEntryForm.
- * Every item carries its GST %; 0 % lines count as Non-GST billed.
- */
-import { Screen } from '../../src/components/ui';
-import { SalesEntryForm } from '../../src/components/SalesEntryForm';
+/** SALES bill entry for staff — see src/components/BillForm. */
+import { BillForm } from '../../src/components/BillForm';
 import { ClockBanner } from '../../src/components/ClockBanner';
+import { Screen } from '../../src/components/ui';
 
 export default function Outward() {
   return (
     <Screen>
       <ClockBanner />
-      <SalesEntryForm />
+      <BillForm kind="sale" />
     </Screen>
   );
 }

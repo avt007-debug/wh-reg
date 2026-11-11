@@ -494,6 +494,52 @@ SELECT t.ok((SELECT x->>'first_in' IS NOT NULL FROM jsonb_array_elements(public.
 SELECT t.ok((SELECT count(*) FROM jsonb_array_elements(public.owner_attendance_today(:WHB)) x WHERE x->>'id' = :EMPA) = 0,
             'today''s attendance follows the warehouse switch');
 
+\echo '── Extra charges, discount %, new seller, credit notes'
+:AS_EMPA
+SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(), 'newCustomer', jsonb_build_object('name', 'Charges Test'),
+  'loadingCharges', 50, 'transportCharges', 200,
+  'lines', jsonb_build_array(jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS',
+           'qty', 2, 'unitBasePrice', 100, 'discountPct', 10, 'gstRate', 18)))) -> 'dispatch' AS ch \gset
+SELECT t.ok((:'ch'::jsonb->>'grand_total')::numeric = 462.40,
+            'sale: (2 × ₹100 − 10%) + 18% GST = ₹212.40, + loading ₹50 + transport ₹200 = ₹462.40');
+SELECT public.create_purchase(jsonb_build_object('clientTxnId', gen_random_uuid(),
+  'newVendor', jsonb_build_object('name', 'Sai Hardware Agencies', 'gstin', '37AAPFV1234K1ZS'),
+  'vendorInvoiceNo', 'SAI-1', 'vendorInvoiceDate', app.today_ist(), 'loadingCharges', 30,
+  'lines', jsonb_build_array(jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS',
+           'qty', 10, 'unitBasePrice', 200, 'discountPct', 5, 'gstRate', 18, 'creditPct', 50)))) -> 'purchase' AS sp \gset
+SELECT t.ok((:'sp'::jsonb->>'grand_total')::numeric = 2272 AND :'sp'::jsonb->>'vendor_name' = 'Sai Hardware Agencies',
+            'staff purchase with a new seller: (10 × ₹200 − 5%) + 18% = ₹2,242 + loading ₹30 = ₹2,272');
+SELECT t.throws($$SELECT public.owner_credit_summary()$$, 'WH002', 'employees cannot see credit notes');
+SELECT t.throws($$SELECT * FROM fin.purchase_credit_notes$$, '42501', 'credit note table is not readable by staff');
+:AS_OWNER
+SELECT t.ok((public.owner_purchase_detail((:'sp'::jsonb->>'id')::uuid)->>'credit_total')::numeric = 0,
+            'a staff-entered credit % is ignored (only the owner sets credit)');
+SELECT public.owner_set_purchase_credits((:'sp'::jsonb->>'id')::uuid, NULL, 3);
+SELECT public.owner_approve_purchase((:'sp'::jsonb->>'id')::uuid) \g /dev/null
+SELECT t.ok((public.owner_purchase_detail((:'sp'::jsonb->>'id')::uuid)->>'credit_total')::numeric = 57,
+            'owner sets 3% credit on the bill → ₹57 credit note (3% of ₹1,900 before GST)');
+SELECT public.create_purchase(jsonb_build_object('clientTxnId', gen_random_uuid(), 'warehouseId', :WHA,
+  'vendorId', (SELECT id FROM vendors WHERE gstin = '37AAPFV1234K1ZS'), 'vendorInvoiceNo', 'SAI-2', 'vendorInvoiceDate', app.today_ist(),
+  'lines', jsonb_build_array(
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 100, 'unitBasePrice', 2, 'gstRate', 18, 'creditPct', 10),
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS', 'qty', 1, 'unitBasePrice', 100, 'gstRate', 18)))) -> 'purchase' AS op \gset
+SELECT t.ok(:'op'::jsonb->>'status' = 'POSTED' AND (public.owner_purchase_detail((:'op'::jsonb->>'id')::uuid)->>'credit_total')::numeric = 20,
+            'owner purchase: credit % per line saved with the bill (10% of ₹200 = ₹20)');
+SELECT t.ok((SELECT (x->>'available')::numeric FROM jsonb_array_elements(public.owner_credit_summary()->'vendors') x WHERE x->>'gstin' = '37AAPFV1234K1ZS') = 77
+            AND (SELECT jsonb_array_length(x->'items') FROM jsonb_array_elements(public.owner_credit_summary()->'vendors') x WHERE x->>'gstin' = '37AAPFV1234K1ZS') = 2,
+            'credit available by seller (₹77) and by item (2 items)');
+SELECT public.owner_use_credit(jsonb_build_object('vendorId', (SELECT id FROM vendors WHERE gstin = '37AAPFV1234K1ZS'), 'amount', 50, 'notes', 'adjusted in SAI-3'));
+SELECT t.ok((SELECT (x->>'available')::numeric FROM jsonb_array_elements(public.owner_credit_summary()->'vendors') x WHERE x->>'gstin' = '37AAPFV1234K1ZS') = 27,
+            'using ₹50 leaves ₹27 available');
+SELECT t.throws($$SELECT public.owner_use_credit(jsonb_build_object('vendorId', (SELECT id FROM vendors WHERE gstin = '37AAPFV1234K1ZS'), 'amount', 100))$$,
+            'WH005', 'cannot use more credit than is available');
+SELECT public.owner_update_purchase((:'op'::jsonb->>'id')::uuid, jsonb_build_object('loadingCharges', 40, 'lines', jsonb_build_array(
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 100, 'unitBasePrice', 2,
+                       'gstRate', 18, 'discountPct', 10, 'creditPct', 5)))) \g /dev/null
+SELECT t.ok((public.owner_purchase_detail((:'op'::jsonb->>'id')::uuid)->>'credit_total')::numeric = 9
+            AND (public.owner_purchase_detail((:'op'::jsonb->>'id')::uuid)->>'grand_total')::numeric = 252.40,
+            'editing keeps credit % and discount %: (₹200 − 10%) + 18% + loading ₹40 = ₹252.40; credit 5% of ₹180 = ₹9');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================
