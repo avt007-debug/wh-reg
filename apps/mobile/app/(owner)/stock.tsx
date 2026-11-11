@@ -108,7 +108,7 @@ export default function OwnerStock() {
         <SmallButton icon="⬇" title="Export to Excel" onPress={doExport} disabled={!rows.length} />
       </Toolbar>
 
-      <Card title={`${whName} · ${brandName}`}>
+      <Card title={`${whName} · ${brandName}`} subtitle="Quantity on hand, cost and value per item — tap an item to edit it">
         <Row left={`${rows.length} item(s)`} right={formatINR(totalValue)} sub="stock value at net purchase cost" />
         {rows.map((i) => (
           <Pressable key={i.product_id} onPress={() => setEdit(i.product_id)}

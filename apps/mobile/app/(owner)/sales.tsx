@@ -124,7 +124,7 @@ export default function Sales() {
         <Stat label="GST billed" value={formatINR(split.gst.total)} sub={`${split.gst.lines} line(s) · GST ${formatINR(split.gst.tax)}`} />
         <Stat label="Non-GST billed" value={formatINR(split.nonGst.total)} sub={`${split.nonGst.lines} line(s) at 0%`} />
       </View>
-      <Card title={`GST by rate · ${whName}`}>
+      <Card title={`GST by rate · ${whName}`} subtitle="Taxable value and GST collected at each rate this month">
         {rates.map(([r, b]) => (
           <Row key={r} left={r > 0 ? `${r}% — GST billed` : '0% — Non-GST billed'} sub={`taxable ${formatINR(b.taxable)} · GST ${formatINR(b.tax)}`} right={formatINR(b.total)} />
         ))}

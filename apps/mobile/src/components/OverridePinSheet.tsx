@@ -35,7 +35,7 @@ export function OverridePinSheet({ shortfalls, onApproved, onCancel, warehouseId
 
   return (
     <Modal visible={!!shortfalls} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={{ flex: 1, backgroundColor: '#0008', justifyContent: 'flex-end' }}>
+      <View style={{ flex: 1, backgroundColor: t.overlay, justifyContent: 'flex-end' }}>
         <View style={{ backgroundColor: t.surface, padding: 16, gap: 12, borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
           <Text style={{ color: t.text, fontSize: 18, fontWeight: '700' }}>⚠ Not enough stock</Text>
           <Card>

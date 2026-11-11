@@ -166,7 +166,7 @@ function EmployeeDetail({ emp, month: initialMonth, onClose }: { emp: Emp; month
         <Chips options={['Performance', 'Attendance', 'Market runs', 'Customers', 'Sales'] as const} value={tab} onChange={setTab} />
 
         {!data ? null : tab === 'Performance' ? (
-          <Card title="Last 6 months">
+          <Card title="Last 6 months" subtitle="Sales value entered by this employee each month">
             {[...data.trend].reverse().map((m) => (
               <View key={m.month} style={{ gap: 2, paddingBottom: 8, borderBottomWidth: 0.5, borderColor: t.border }}>
                 <HBar label={monthLabel(m.month)} value={n(m.stats.sales)} max={maxSales} display={formatINR(n(m.stats.sales))}
@@ -186,7 +186,7 @@ function EmployeeDetail({ emp, month: initialMonth, onClose }: { emp: Emp; month
           </Card>
         ) : tab === 'Market runs' ? (
           <>
-            <Card title="Market runs per place">
+            <Card title="Market runs per place" subtitle="How often each area was visited this month">
               {data.places.map((p) => <Row key={p.place} left={p.place} sub={`last ${dmy(p.last)} · ${p.customers} customer(s) approached`} right={`${p.runs} run(s)`} />)}
               {!data.places.length ? <Label muted>No market runs this month</Label> : null}
             </Card>

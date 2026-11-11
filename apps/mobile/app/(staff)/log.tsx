@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
 import { useAuth } from '../../src/auth/store';
-import { Button, Card, Label, Row, Screen } from '../../src/components/ui';
+import { Button, Card, Label, Row, Screen, ThemeSwitch } from '../../src/components/ui';
 
 /** "My Day": the employee's own entries from today (that is all RLS returns to them). */
 export default function MyDay() {
@@ -26,7 +26,8 @@ export default function MyDay() {
           sub={`${p.vendor_invoice_no} · ${p.status === 'PENDING' ? '⏳ waiting for owner approval' : p.status === 'POSTED' ? '✓ approved, added to stock' : '✕ rejected'}`} />)}
       </Card>
       <Label muted>Entries are locked once saved. Ask the owner to cancel a wrong entry, then re-enter it.</Label>
-      <Button title="Log out" kind="secondary" onPress={() => void logout()} />
+      <Card title="Appearance" icon="color-palette-outline" subtitle="Day, Auto (follows your phone) or Night"><ThemeSwitch /></Card>
+      <Button title="Log out" icon="log-out-outline" kind="secondary" onPress={() => void logout()} />
     </Screen>
   );
 }

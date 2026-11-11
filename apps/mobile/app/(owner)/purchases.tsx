@@ -152,8 +152,7 @@ export default function OwnerPurchases() {
         </View>
 
         {pendingRows.length ? (
-          <Card title={`⏳ Waiting for your approval (${pendingRows.length})`}>
-            <Label muted>Entered by staff. Stock is added only after you approve. You can edit before approving.</Label>
+          <Card title={`Waiting for your approval (${pendingRows.length})`} subtitle="Entered by employees. Stock is added only after you approve — you can edit first." tone="warning">
             {pendingRows.map((p) => (
               <InvoiceCard key={p.id} p={p} onEdit={() => setEdit(p)} actions={
                 <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
@@ -164,7 +163,7 @@ export default function OwnerPurchases() {
           </Card>
         ) : null}
 
-        <Card title={`${whName} · ${approved.length} approved invoice(s)`}>
+        <Card title={`${whName} · ${approved.length} approved invoice(s)`} subtitle="Grouped by supplier invoice — tap Edit to change discounts, credit % or charges">
           <GstSplitRows {...splitByGst(approved.flatMap((p) => p.lines))} />
           <Row left="Billed (incl. GST + freight)" right={formatINR(billed)} />
           <Row left="Your extra discounts" right={formatINR(disc)} sub="per-item + per-bill · only you can see this" />

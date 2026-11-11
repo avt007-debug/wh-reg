@@ -41,7 +41,7 @@ export function PromptHost() {
   const close = (v: string | null) => { req?.resolve(v); set(null); setValue(''); };
   return (
     <Modal visible={!!req} transparent animationType="fade" onRequestClose={() => close(null)}>
-      <View style={{ flex: 1, backgroundColor: '#0008', justifyContent: 'center', padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: t.overlay, justifyContent: 'center', padding: 24 }}>
         <View style={{ backgroundColor: t.surface, borderRadius: 12, padding: 16, gap: 12 }}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>{req?.title}</Text>
           {req?.message ? <Text style={{ color: t.textSecondary }}>{req.message}</Text> : null}

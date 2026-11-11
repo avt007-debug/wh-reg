@@ -1,15 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
-import { useAuth } from '../../src/auth/store';
-import { Button, Card, HBar, Label, Row, Screen } from '../../src/components/ui';
+import { Card, HBar, Label, Row, Screen } from '../../src/components/ui';
 import { todayIST } from '../../src/lib/ids';
 
 const monthStart = () => `${todayIST().slice(0, 7)}-01`;
 
 /** Margin spread, dead stock, and staff / sales-agent performance. */
 export default function Insights() {
-  const logout = useAuth((s) => s.signOut);
   const range = { p_from: monthStart(), p_to: todayIST() };
   const qs = JSON.stringify(range);
   const margins = useQuery({ queryKey: ['margins', qs], queryFn: () => rpc<{ category: string; revenue_excl_gst: number; gross_margin: number; margin_pct: number; avg_cost_per_unit: number; avg_price_per_unit: number }[]>('owner_margins', range) });
@@ -43,7 +41,6 @@ export default function Insights() {
         ))}
         {!dead.data?.length ? <Label muted>No dead stock</Label> : null}
       </Card>
-      <Button title="Log out" kind="secondary" onPress={() => void logout()} />
     </Screen>
   );
 }

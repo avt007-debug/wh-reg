@@ -77,7 +77,7 @@ export default function LedgerPage() {
         <Stat label="Collected this month" value={formatINR(n(thisMonth?.collected))} sub={`sales ${formatINR(n(thisMonth?.sales))}`} />
       </View>
 
-      <Card title="Sales vs payments collected">
+      <Card title="Sales vs payments collected" subtitle="Billed (incl. GST) against money received, month by month">
         <Chips options={['Monthly', 'Yearly'] as const} value={graph} onChange={setGraph} />
         <WarehouseBars points={points} warehouses={['SALES', 'PAID']} buckets={buckets} names={{ SALES: 'Sales (incl. GST)', PAID: 'Collected' }} showTotal={false}
           formatBucket={graph === 'Monthly' ? monthLabel : fyOf} formatAxis={graph === 'Monthly' ? (b) => monthLabel(b).slice(0, 3) : fyOf} />
@@ -113,7 +113,7 @@ export default function LedgerPage() {
           {!customers.length ? <Label muted>{q.isLoading ? 'Loading…' : 'No customers with bills yet'}</Label> : null}
         </>
       ) : view === 'Late payments' ? (
-        <Card title="Bills unpaid for more than 30 days">
+        <Card title="Bills unpaid for more than 30 days" tone="danger" subtitle="Tap a customer to see their full statement and record a payment">
           {(d?.late ?? []).map((l) => (
             <Pressable key={l.dispatch_id} onPress={() => setOpen(l.customer_id)}>
               <Row left={`${l.customer_name} · ${l.invoice_no}`} sub={`${dmy(l.invoice_date)} · ${l.days_old} days late · responsible: ${l.responsible}${l.phone ? ` · ${l.phone}` : ''}`}
@@ -123,7 +123,7 @@ export default function LedgerPage() {
           {!d?.late.length ? <Label muted>No late payments 🎉</Label> : null}
         </Card>
       ) : view === 'Payments' ? (
-        <Card title="Payments received">
+        <Card title="Payments received" subtitle="Date, mode and who received the money">
           {(d?.payments ?? []).map((p) => (
             <Pressable key={p.id} onPress={() => setOpen(p.customer_id)}>
               <Row left={`${p.customer_name} · ${p.mode}`} sub={`${dmy(p.paid_on)} · received by ${p.received_by}${p.reference ? ` · ${p.reference}` : ''} · entered ${dateTimeIST(p.entered_at)}`}
@@ -133,7 +133,7 @@ export default function LedgerPage() {
           {!d?.payments.length ? <Label muted>No payments recorded yet</Label> : null}
         </Card>
       ) : (
-        <Card title="Collection responsibility by employee">
+        <Card title="Collection responsibility by employee" subtitle="Unpaid amounts on bills each employee entered">
           {(d?.by_employee ?? []).map((e) => (
             <Row key={e.user_id} left={e.name} sub={`${e.bills} bill(s) entered · collected this month ${formatINR(n(e.collected_this_month))}${n(e.overdue) ? ` · late ${formatINR(n(e.overdue))}` : ''}`}
               right={formatINR(n(e.outstanding))} />
