@@ -624,6 +624,28 @@ SELECT t.throws($$SELECT public.owner_import_catalog('X', 'x', '[]')$$, 'WH002',
 :AS_ANON
 SELECT t.throws($$SELECT public.find_material('TAK002')$$, '42501', 'anonymous cannot look up items');
 
+\echo '── New company / category / item from a bill (any user)'
+:AS_EMPA
+SELECT public.add_company('  Jk  Files ') AS co \gset
+SELECT t.ok((:'co'::jsonb->>'created')::boolean AND :'co'::jsonb->>'name' = 'Jk Files', 'employee adds a company (spaces tidied)');
+SELECT t.ok(NOT (public.add_company('JK FILES')->>'created')::boolean AND public.add_company('jk files')->>'id' = :'co'::jsonb->>'id', 'same company in another case is reused');
+SELECT public.add_category('Files & Rasps') AS cat \gset
+SELECT public.add_category('Flat Files', (:'cat'::jsonb->>'id')::uuid) AS sub \gset
+SELECT t.ok(:'sub'::jsonb->>'path' LIKE '%Files & Rasps%Flat Files%', 'employee adds a category and a sub-category (path built)');
+SELECT public.create_item(jsonb_build_object('skuCode', 'jkf-200', 'name', 'Flat File 200mm', 'brandId', :'co'::jsonb->>'id',
+  'categoryId', :'sub'::jsonb->>'id', 'hsnCode', '82031000', 'gstRate', 18, 'sellingPrice', 145.555, 'stdPkg', 12, 'moq', 144)) AS item \gset
+SELECT t.ok(:'item'::jsonb->>'sku_code' = 'JKF-200' AND (:'item'::jsonb->>'default_selling_price')::numeric = 145.56
+            AND :'item'::jsonb->>'brand' = 'Jk Files' AND jsonb_array_length(:'item'::jsonb->'uoms') = 3,
+            'employee creates an item: code upper-cased, price, company, PACK + CTN units');
+SELECT t.ok((SELECT created_by FROM products WHERE sku_code = 'JKF-200') = :EMPA, 'item remembers who created it');
+SELECT t.throws($$SELECT public.create_item('{"skuCode":"JKF-200","name":"dup","hsnCode":"8203","gstRate":18}')$$, 'WH005', 'duplicate item code refused');
+SELECT t.throws($$SELECT public.create_item('{"skuCode":"JKF-201","name":"bad hsn","hsnCode":"123","gstRate":18}')$$, 'WH005', 'bad HSN refused');
+SELECT t.throws($$SELECT public.create_item('{"skuCode":"JKF-202","name":"bad gst","hsnCode":"8203","gstRate":7}')$$, 'WH005', 'GST rate must be a valid slab');
+SELECT t.throws($$SELECT public.create_item('{"skuCode":"JKF-203","name":"bad pack","hsnCode":"8203","gstRate":18,"stdPkg":2.5}')$$, 'WH005', 'std packing must be whole pieces');
+SELECT t.throws($$SELECT public.owner_save_product('{"id":"00000000-0000-0000-0000-000000000000","skuCode":"X1","name":"x","hsnCode":"8203"}')$$, 'WH002', 'editing items stays owner-only');
+:AS_ANON
+SELECT t.throws($$SELECT public.add_company('Hacker Co')$$, '42501', 'anonymous cannot add companies');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

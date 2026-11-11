@@ -26,6 +26,7 @@ import { useTheme } from '../theme';
 import { GstSplitRows, GstTag } from './GstSplit';
 import { ItemPicker } from './ItemPicker';
 import { MaterialEntry } from './MaterialEntry';
+import { NewItemSheet } from './NewItemSheet';
 import { OverridePinSheet } from './OverridePinSheet';
 import { PartyPicker } from './PartyPicker';
 import { QtyUomField } from './QtyUomField';
@@ -70,6 +71,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
   const [newPhone, setNewPhone] = useState('');
   const [lines, setLines] = useState<Line[]>([]);
   const [picking, setPicking] = useState(false);
+  const [creating, setCreating] = useState<string | null>(null);
   const [loading, setLoading] = useState('');
   const [transport, setTransport] = useState('');
   const [other, setOther] = useState('');
@@ -255,8 +257,11 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
           </Card>
         );
       })}
-      <MaterialEntry onPick={addProduct} showPrice={isSale} />
-      <Button title="Search items by name" icon="search" kind="secondary" onPress={() => setPicking(true)} />
+      <MaterialEntry onPick={addProduct} onCreateNew={(c) => setCreating(c)} showPrice={isSale} />
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        <View style={{ flex: 1, minWidth: 200 }}><Button title="Search items by name" icon="search" kind="secondary" onPress={() => setPicking(true)} /></View>
+        <View style={{ flex: 1, minWidth: 200 }}><Button title="New item / company / category" icon="add-circle-outline" kind="secondary" onPress={() => setCreating('')} /></View>
+      </View>
 
       <Card title="Extra charges">
         <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -293,6 +298,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
         busy={save.isPending} disabled={!valid} />
 
       <ItemPicker visible={picking} onClose={() => setPicking(false)} onPick={addProduct} />
+      <NewItemSheet visible={creating != null} initialCode={creating ?? ''} onClose={() => setCreating(null)} onCreated={addProduct} forPurchase={!isSale} />
       {isSale ? (
         <OverridePinSheet shortfalls={shortfalls} warehouseId={owner ? warehouseId : undefined}
           onCancel={() => setShortfalls(null)} onApproved={(id) => save.mutate(id)} />

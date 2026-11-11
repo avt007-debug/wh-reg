@@ -11,9 +11,9 @@ import { formatINR } from '@wh/shared';
 import { rpc } from '../api/client';
 import type { ProductHit } from '../api/types';
 import { useTheme } from '../theme';
-import { Card, Label } from './ui';
+import { Card, Label, SmallButton } from './ui';
 
-export function MaterialEntry({ onPick, showPrice = true }: { onPick: (p: ProductHit) => void; showPrice?: boolean }) {
+export function MaterialEntry({ onPick, onCreateNew, showPrice = true }: { onPick: (p: ProductHit) => void; onCreateNew?: (code: string) => void; showPrice?: boolean }) {
   const t = useTheme();
   const [code, setCode] = useState('');
   const [dq, setDq] = useState('');
@@ -37,7 +37,12 @@ export function MaterialEntry({ onPick, showPrice = true }: { onPick: (p: Produc
         {code ? <Pressable onPress={() => { setCode(''); setDq(''); }} accessibilityLabel="Clear"><Ionicons name="close-circle" size={20} color={t.textMuted} /></Pressable> : null}
       </View>
       {dq.length >= 2 && hits.isFetching && !list.length ? <Label muted>Looking up…</Label> : null}
-      {dq.length >= 2 && !hits.isFetching && !list.length ? <Label muted>No item with Material No. starting “{dq}”. Use “Search items” below to search by name.</Label> : null}
+      {dq.length >= 2 && !hits.isFetching && !list.length ? (
+        <View style={{ gap: 8 }}>
+          <Label muted>No item with Material No. starting “{dq}”. Search by name below, or add it as a new item.</Label>
+          {onCreateNew ? <SmallButton title={`Add new item “${dq}”`} icon="add" kind="primary" onPress={() => { onCreateNew(dq); setCode(''); setDq(''); }} /> : null}
+        </View>
+      ) : null}
       {list.map((p) => (
         <Pressable key={p.id} onPress={() => pick(p)} accessibilityRole="button" accessibilityLabel={`Add ${p.sku_code} ${p.name}`}
           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1,
