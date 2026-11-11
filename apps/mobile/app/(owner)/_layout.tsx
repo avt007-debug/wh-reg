@@ -20,7 +20,7 @@ const SECTIONS: NavSection[] = [
     { name: 'ledger', title: 'Ledger', icon: 'book', hint: 'Payments received, balances to collect and late payers' },
   ] },
   { title: 'People', items: [
-    { name: 'employees', title: 'Employees', icon: 'people', hint: 'Attendance, sales, market runs and customer visits per employee' },
+    { name: 'employees', title: 'Employees', icon: 'people', hint: 'Monthly sales targets, attendance, sales, market runs and customer visits per employee' },
     { name: 'team', title: 'Settings', icon: 'settings', hint: 'Logins, passwords, warehouses and Day / Night mode' },
   ] },
 ];

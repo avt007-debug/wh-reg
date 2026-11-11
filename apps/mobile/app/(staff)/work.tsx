@@ -37,7 +37,7 @@ function ClockCard() {
   const [note, setNote] = useState('');
   const [, tick] = useState(0);
   useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 30_000); return () => clearInterval(id); }, []);
-  const done = () => { setNote(''); void qc.invalidateQueries({ queryKey: ['my-attendance'] }); };
+  const done = () => { setNote(''); void qc.invalidateQueries({ queryKey: ['my-attendance'] }); void qc.invalidateQueries({ queryKey: ['my-dashboard'] }); };
   const clockIn = useMutation({ mutationFn: () => rpc<Shift>('clock_in', { p_note: note || null }), onSuccess: (s) => { done(); notify('Clocked in', `at ${timeIST(s.clock_in_at)}`); }, onError: fail });
   const clockOut = useMutation({ mutationFn: () => rpc<Shift>('clock_out', { p_note: note || null }), onSuccess: (s) => { done(); notify('Clocked out', `at ${timeIST(s.clock_out_at)}`); }, onError: fail });
 

@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
-import { Card, Chips, HBar, Label, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
+import { Card, Chips, Empty, HBar, Label, Progress, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
 import { dateTimeIST, dmy, hoursLabel, monthLabel, monthLong, monthStart, timeIST } from '../../src/lib/dates';
 import { askText, notify } from '../../src/lib/dialogs';
 import { exportXlsx } from '../../src/lib/exportFile';
@@ -21,7 +21,7 @@ interface Stats {
 }
 interface Emp {
   id: string; login_id: string; full_name: string; role: string; phone: string | null; is_active: boolean; removed_at: string | null;
-  warehouse_name: string | null; clocked_in_since: string | null; stats: Stats;
+  warehouse_name: string | null; clocked_in_since: string | null; target: number | null; stats: Stats;
 }
 interface Detail {
   stats: Stats;
@@ -69,6 +69,7 @@ export default function Employees() {
           <SmallButton title={showRemoved ? 'Hide removed staff' : 'Show removed staff'} onPress={() => setShowRemoved((v) => !v)} />
         ) : null}
       </Toolbar>
+      <SalesTargets month={month} />
       {rows.map((e) => (
         <Pressable key={e.id} onPress={() => setOpen(e)}>
           <Card>
@@ -82,6 +83,12 @@ export default function Employees() {
               </Text>
             </View>
             <StatGrid s={e.stats} />
+            {e.target != null ? (
+              <View style={{ gap: 4 }}>
+                <Label>Target {formatINR(n(e.target))} · achieved {formatINR(n(e.stats.sales))} ({Math.round((n(e.stats.sales) / n(e.target)) * 100)}%)</Label>
+                <Progress value={n(e.stats.sales)} max={n(e.target)} height={8} />
+              </View>
+            ) : null}
             <Label muted>Tap for attendance, market runs, customers and sales →</Label>
           </Card>
         </Pressable>
@@ -89,6 +96,61 @@ export default function Employees() {
       {!rows.length ? <Label muted>{list.isLoading ? 'Loading…' : 'No employees yet — add them in Settings.'}</Label> : null}
       {open ? <EmployeeDetail emp={open} month={month} onClose={() => setOpen(null)} /> : null}
     </Screen>
+  );
+}
+
+interface TargetRow { user_id: string; full_name: string; login_id: string; warehouse_name: string | null; target: number | null; note: string | null; last_month_target: number | null; achieved: number }
+
+/** Owner sets each employee's monthly sales target and sees how much is achieved. */
+function SalesTargets({ month }: { month: string }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['sales-targets', month], queryFn: () => rpc<TargetRow[]>('owner_sales_targets', { p_month: month }) });
+  const rows = q.data ?? [];
+  const save = (r: TargetRow, amount: number | null, note: string | null) =>
+    rpc('owner_set_sales_target', { p_user: r.user_id, p_month: month, p_target: amount, p_note: note })
+      .then(() => { for (const k of ['sales-targets', 'employees-month']) void qc.invalidateQueries({ queryKey: [k] }); },
+        (e) => notify('Not saved', e instanceof Error ? e.message : String(e)));
+  const edit = async (r: TargetRow) => {
+    const a = await askText(`Sales target for ${r.full_name}`, `${monthLong(month)} — amount in ₹ before GST${r.target ? ` (now ${formatINR(n(r.target))})` : ''}. Enter 0 to remove.`);
+    if (a == null) return;
+    const amount = Number(a.replace(/[₹,\s]/g, ''));
+    if (!Number.isFinite(amount) || amount < 0) return notify('Enter an amount like 150000');
+    if (amount === 0) return void save(r, null, null);
+    const note = await askText('Note for the employee (optional)', 'e.g. Focus on new dealers in Tirupati');
+    void save(r, amount, note ?? r.note);
+  };
+  const totalTarget = rows.reduce((a, r) => a + n(r.target), 0);
+  const totalAch = rows.filter((r) => r.target != null).reduce((a, r) => a + n(r.achieved), 0);
+  return (
+    <Card title={`Sales targets · ${monthLong(month)}`} icon="flag-outline"
+      subtitle="Set a monthly target for each employee. Achieved = their posted sales bills before GST. Employees see this on their dashboard."
+      right={totalTarget ? <Text style={{ color: t.textSecondary, fontWeight: '700' }}>{Math.round((totalAch / totalTarget) * 100)}% overall</Text> : null}>
+      {rows.map((r) => {
+        const pct = r.target ? Math.round((n(r.achieved) / n(r.target)) * 100) : null;
+        return (
+          <View key={r.user_id} style={{ gap: 6, paddingVertical: 10, borderBottomWidth: 0.5, borderColor: t.border }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: t.text, fontWeight: '700' }}>{r.full_name}</Text>
+                <Text style={{ color: t.textMuted, fontSize: 12.5 }}>
+                  {r.target != null
+                    ? `${formatINR(n(r.achieved))} of ${formatINR(n(r.target))} · ${pct}%${n(r.achieved) >= n(r.target) ? ' — achieved' : ` · ${formatINR(n(r.target) - n(r.achieved))} to go`}`
+                    : `No target · sales ${formatINR(n(r.achieved))}`}
+                </Text>
+              </View>
+              {r.target == null && r.last_month_target ? (
+                <SmallButton title={`Same as last month (${formatINR(n(r.last_month_target))})`} onPress={() => void save(r, n(r.last_month_target), null)} />
+              ) : null}
+              <SmallButton title={r.target != null ? 'Edit' : 'Set target'} icon={r.target != null ? 'create-outline' : 'flag-outline'} kind={r.target != null ? 'secondary' : 'primary'} onPress={() => void edit(r)} />
+            </View>
+            {r.target != null ? <Progress value={n(r.achieved)} max={n(r.target)} height={8} /> : null}
+            {r.note ? <Text style={{ color: t.textSecondary, fontSize: 12.5 }}>Note: {r.note}</Text> : null}
+          </View>
+        );
+      })}
+      {!rows.length ? <Empty icon="people-outline" text={q.isLoading ? 'Loading…' : 'No employees yet — add them in Settings.'} /> : null}
+    </Card>
   );
 }
 

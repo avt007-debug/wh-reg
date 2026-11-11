@@ -23,7 +23,7 @@ const toIso = (d: string) => {
   const m = d.trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
   return m ? `${m[3]}-${m[2]!.padStart(2, '0')}-${m[1]!.padStart(2, '0')}` : null;
 };
-export const LEDGER_KEYS = ['owner-ledger', 'my-ledger', 'statement'];
+export const LEDGER_KEYS = ['owner-ledger', 'my-ledger', 'statement', 'my-dashboard'];
 
 export function PaymentForm({ customer: fixed, onSaved }: { customer?: { id: string; name: string } | null; onSaved?: () => void }) {
   const qc = useQueryClient();

@@ -145,7 +145,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
       notify(r.title, r.msg);
       reset();
       for (const k of ['inventory', 'my-day', 'sales-month', 'purchases-month', 'pending-purchases', 'credit-summary', 'owner-stock',
-        'stock-overview', 'reorder', 'trend-day', 'trend-month', 'top']) void qc.invalidateQueries({ queryKey: [k] });
+        'stock-overview', 'reorder', 'trend-day', 'trend-month', 'top', 'my-dashboard', 'employees-month', 'sales-targets']) void qc.invalidateQueries({ queryKey: [k] });
       onSaved?.();
     },
     onError: (e) => {

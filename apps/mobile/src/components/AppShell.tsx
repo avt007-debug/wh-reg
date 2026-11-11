@@ -29,7 +29,7 @@ export const WIDE = 900;
 export const useWide = () => useWindowDimensions().width >= WIDE;
 
 function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+  return name.replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
 }
 
 function Badge({ n }: { n: unknown }) {

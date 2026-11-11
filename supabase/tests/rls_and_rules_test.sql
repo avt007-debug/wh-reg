@@ -571,6 +571,35 @@ SELECT t.ok((SELECT (x->>'overdue')::numeric FROM jsonb_array_elements(public.ow
 SELECT t.ok((SELECT x->>'received_by' FROM jsonb_array_elements(public.owner_ledger()->'payments') x WHERE x->>'reference' = 'UTR123')
             = (SELECT full_name FROM users WHERE id = :EMPB), 'payments show who received them');
 
+\echo '── Sales targets + employee dashboard'
+:AS_EMPA
+SELECT t.throws($$SELECT public.owner_set_sales_target('00000000-0000-0000-0000-000000000010', app.today_ist(), 50000)$$, 'WH002', 'employees cannot set targets');
+SELECT t.throws($$SELECT public.owner_sales_targets(app.today_ist())$$, 'WH002', 'employees cannot list everyone''s targets');
+SELECT t.ok(public.my_dashboard()->'target' = 'null'::jsonb, 'no target yet → dashboard shows none');
+SELECT public.clock_in('dash test') \g /dev/null
+:AS_OWNER
+SELECT t.ok((public.owner_set_sales_target(:EMPA, app.today_ist(), 50000, 'Diwali push')->>'target')::numeric = 50000, 'owner sets Ravi''s monthly target');
+SELECT t.ok((SELECT (x->>'target')::numeric = 50000 AND (x->>'achieved')::numeric >= 0 FROM jsonb_array_elements(public.owner_sales_targets(app.today_ist())) x
+              WHERE (x->>'user_id')::uuid = :EMPA), 'owner sees target and achieved per employee');
+SELECT t.ok((SELECT (x->>'target')::numeric FROM jsonb_array_elements(public.owner_employees_month(app.today_ist())) x WHERE (x->>'id')::uuid = :EMPA) = 50000,
+            'Employees page carries the target');
+:AS_EMPA
+SELECT t.ok((public.my_dashboard()->>'target')::numeric = 50000 AND public.my_dashboard()->>'target_note' = 'Diwali push', 'employee sees own target');
+SELECT t.ok((public.my_dashboard()->>'achieved')::numeric = (SELECT coalesce(sum(taxable_total),0) FROM dispatches
+              WHERE created_by = :EMPA AND status = 'POSTED' AND invoice_date >= date_trunc('month', app.today_ist())),
+            'achieved = own posted sales this month before GST');
+SELECT t.ok(jsonb_array_length(public.my_dashboard()->'days') = extract(day FROM app.today_ist())::int, 'monthly attendance lists every day up to today');
+SELECT t.ok((public.my_dashboard()->'days'->0->>'open')::boolean AND public.my_dashboard()->'open_shift' IS NOT NULL
+            AND jsonb_array_length(public.my_dashboard()->'today_shifts') >= 1, 'today shows the open clock-in');
+SELECT public.clock_out() \g /dev/null
+SELECT t.ok(public.my_dashboard()->'days'->0->>'last_out' IS NOT NULL, 'clock-out time appears on today''s row');
+:AS_EMPB
+SELECT t.ok(public.my_dashboard()->'target' = 'null'::jsonb, 'another employee does not see Ravi''s target');
+:AS_OWNER
+SELECT public.owner_set_sales_target(:EMPA, app.today_ist(), 0) \g /dev/null
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_sales_targets(app.today_ist())) x WHERE (x->>'user_id')::uuid = :EMPA AND x->>'target' IS NOT NULL),
+            'setting 0 clears the target');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

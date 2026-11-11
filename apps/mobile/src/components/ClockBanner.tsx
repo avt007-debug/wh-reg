@@ -13,7 +13,7 @@ export function ClockBanner() {
   const att = useQuery({ queryKey: ['my-attendance'], queryFn: () => rpc<{ open: { clock_in_at: string } | null }>('my_attendance') });
   const clockIn = useMutation({
     mutationFn: () => rpc<{ clock_in_at: string }>('clock_in'),
-    onSuccess: (s) => { void qc.invalidateQueries({ queryKey: ['my-attendance'] }); notify('Clocked in', `at ${timeIST(s.clock_in_at)}`); },
+    onSuccess: (s) => { void qc.invalidateQueries({ queryKey: ['my-attendance'] }); void qc.invalidateQueries({ queryKey: ['my-dashboard'] }); notify('Clocked in', `at ${timeIST(s.clock_in_at)}`); },
     onError: (e) => notify('Not clocked in', e instanceof Error ? e.message : String(e)),
   });
   if (att.isLoading || att.isError) return null;
@@ -22,7 +22,7 @@ export function ClockBanner() {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 10, borderWidth: 1,
       borderColor: open ? t.border : t.warning, backgroundColor: t.card }}>
       <Text style={{ flex: 1, color: open ? t.textSecondary : t.warning, fontWeight: '600' }}>
-        {open ? `🟢 Clocked in since ${timeIST(open.clock_in_at)}` : 'You have not clocked in'}
+        {open ? `● Clocked in since ${timeIST(open.clock_in_at)}` : 'You have not clocked in'}
       </Text>
       {!open ? <SmallButton title="Clock in" kind="primary" onPress={() => clockIn.mutate()} disabled={clockIn.isPending} /> : null}
     </View>

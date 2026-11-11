@@ -4,6 +4,9 @@ import { useTheme } from '../../src/theme';
 
 /** Floor staff: physical stock + data entry + own log. No owner financial screens exist here. */
 const SECTIONS: NavSection[] = [
+  { title: 'Overview', items: [
+    { name: 'home', title: 'Dashboard', icon: 'speedometer', hint: 'Your clock in / out, sales target, monthly attendance and summary' },
+  ] },
   { title: 'Daily work', items: [
     { name: 'stock', title: 'Stock', icon: 'cube', hint: 'What is on the shelf in your warehouse right now' },
     { name: 'outward', title: 'Sales', icon: 'arrow-up-circle', hint: 'Make a customer bill — items, discount %, GST and charges' },
@@ -22,7 +25,7 @@ export default function StaffLayout() {
   const wide = useWide();
   return (
     <Tabs
-      tabBar={(p) => <AppTabBar {...p} sections={SECTIONS} primary={['stock', 'outward', 'inward', 'payments']} roleLabel="Employee" />}
+      tabBar={(p) => <AppTabBar {...p} sections={SECTIONS} primary={['home', 'outward', 'stock', 'payments']} roleLabel="Employee" />}
       screenOptions={{
         tabBarPosition: wide ? 'left' : 'bottom',
         header: (p) => <AppHeader {...p} sections={SECTIONS} />,

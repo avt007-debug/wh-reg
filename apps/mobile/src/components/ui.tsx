@@ -222,7 +222,7 @@ export function Stat({ label, value, sub, icon, tone }: { label: string; value: 
   const fg = tone === 'danger' ? t.danger : tone === 'warning' ? t.warning : tone === 'good' ? t.good : t.accent;
   const bg = tone === 'danger' ? t.dangerSoft : tone === 'warning' ? t.warningSoft : tone === 'good' ? t.goodSoft : t.accentSoft;
   return (
-    <View style={[s.card, shadow(t), { flex: 1, minWidth: narrow ? 150 : 160, padding: narrow ? 12 : 16, backgroundColor: t.card, borderColor: t.border, gap: 6 }]}>
+    <View style={[s.card, shadow(t), { flex: 1, minWidth: narrow ? 150 : 280, padding: narrow ? 12 : 16, backgroundColor: t.card, borderColor: t.border, gap: 6 }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={[s.iconBubble, { backgroundColor: bg }]}><Ionicons name={auto} size={16} color={fg} /></View>
         <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={2}>{label}</Text>
@@ -299,6 +299,19 @@ export function HBar({ label, value, max, display, sub }: { label: string; value
         <View style={{ width: `${pct}%`, height: 8, borderRadius: 4, backgroundColor: t.series[0] }} />
       </View>
       {sub ? <Text style={{ color: t.textMuted, fontSize: 12 }}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+/** Target progress bar: green at 100 %+, accent below. Percentage is printed so colour is not the only cue. */
+export function Progress({ value, max, height = 12 }: { value: number; max: number; height?: number }) {
+  const t = useTheme();
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const done = max > 0 && value >= max;
+  return (
+    <View style={{ height, borderRadius: height / 2, backgroundColor: t.cardAlt, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, overflow: 'hidden' }}
+      accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}>
+      <View style={{ width: `${pct}%`, height: '100%', borderRadius: height / 2, backgroundColor: done ? t.good : t.accent }} />
     </View>
   );
 }

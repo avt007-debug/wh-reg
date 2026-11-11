@@ -5,5 +5,5 @@ import { isOwner, useAuth } from '../src/auth/store';
 export default function Index() {
   const user = useAuth((s) => s.user);
   if (!user) return <Redirect href="/(auth)/login" />;
-  return <Redirect href={isOwner(user) ? '/(owner)/dashboard' : '/(staff)/stock'} />;
+  return <Redirect href={isOwner(user) ? '/(owner)/dashboard' : '/(staff)/home'} />;
 }
