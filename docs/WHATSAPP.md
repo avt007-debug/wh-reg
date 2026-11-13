@@ -52,6 +52,42 @@ EOD Warehouse Digest ({{1}}) | {{2}} | Combined Sales: {{3}} | Critical Low Stoc
 ```
 Sample: `2026-11-10` · `Warehouse A Total: ₹1,65,294.40 | Warehouse B Total: ₹0.00` · `₹1,65,294.40` · `WHB:STN-CS-1724 x0 (min 20)`
 
+
+### Reminders and the owner's daily summary (added 13-Nov-2026)
+A 5-minute `pg_cron` job (`whreg-schedules` → `app.run_schedules()`) queues these once per day, at the
+times set by the owner in **Settings → Reminders & daily summary** (defaults below). Each one is also
+saved as an in-app notification (the bell), so they work even before WhatsApp is connected.
+
+| Template | When (default) | To | Variables |
+|---|---|---|---|
+| `clock_in_reminder` | 09:00 on working days (Mon–Sat) | each employee not clocked in | {{1}} first name, {{2}} date |
+| `clock_out_reminder` | 18:30 on working days | each employee still clocked in | {{1}} first name, {{2}} clock-in time |
+| `daily_owner_summary` | 20:00 every day | owner's mobile + extra numbers | {{1}} date, {{2}} sales, {{3}} purchases, {{4}} attendance, {{5}} market runs |
+
+Submit these three templates (category **Utility**, language **English `en`**):
+
+**`clock_in_reminder`**
+```
+Good morning {{1}}. This is a reminder to clock in for today ({{2}}) in the WH Reg app before you start work. Thank you.
+```
+Sample: `Ravi` · `13 Nov 2026`
+
+**`clock_out_reminder`**
+```
+Hello {{1}}. You have been clocked in since {{2}} today. Please remember to clock out in the WH Reg app before you leave. Thank you.
+```
+Sample: `Ravi` · `09:05 AM`
+
+**`daily_owner_summary`**
+```
+Daily summary for {{1}} | Sales: {{2}} | Purchases: {{3}} | Attendance: {{4}} | Market runs: {{5}} | Full details in WH Reg → Daily report.
+```
+Sample: `13 Nov 2026 (Fri)` · `4 bills, ₹1,25,400 incl. GST. To: Sri Hardware ₹62,000; Venkat Traders ₹40,400; +2 more. Payments received: ₹30,000` · `1 bills, ₹2,10,000. From: Tata Agrico ₹2,10,000` · `Ravi 09:02 AM-06:41 PM (9.6h); Kumar absent` · `Ravi: Puttur, Tirupati, 6 customers, 2 orders`
+
+Employees' numbers come from **Staff logins → Edit → Mobile**; the owner's from the owner login's mobile
+plus any extra numbers in the settings card. Each recipient should send one message ("Hi") to the business
+number once, so WhatsApp delivers reliably.
+
 ## 3. Function secrets (Supabase)
 Create `supabase/functions/.env.production` (git-ignored) from `.env.example`, then:
 ```bash

@@ -9,6 +9,7 @@ import { useTheme } from '../../src/theme';
 const SECTIONS: NavSection[] = [
   { title: 'Overview', items: [
     { name: 'dashboard', title: 'Dashboard', icon: 'stats-chart', hint: "Today's sales, stock value, monthly trend, top sellers and who is clocked in" },
+    { name: 'report', title: 'Daily report', icon: 'document-text', hint: 'Sales, purchases, attendance and market runs for any day — same as the 8 pm WhatsApp summary' },
     { name: 'insights', title: 'Insights', icon: 'bulb', hint: 'Margins by category, dead stock and staff performance this month' },
   ] },
   { title: 'Inventory', items: [

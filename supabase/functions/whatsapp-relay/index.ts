@@ -9,15 +9,16 @@
  */
 import { adminClient, json, safeEqual } from '../_shared/supabase.ts';
 import {
-  dispatchAlertParams, eodDigestParams, sendTemplate, waConfigFromEnv, WhatsAppError,
+  clean, dispatchAlertParams, eodDigestParams, sendTemplate, waConfigFromEnv, WhatsAppError,
   type DispatchAlertData, type EodData,
 } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 8;
 
 interface OutboxRow {
-  id: number; event_type: 'DISPATCH_ALERT' | 'EOD_DIGEST' | 'LOW_STOCK';
-  aggregate_id: string | null; payload: { date?: string; sent_to?: string[] }; attempts: number;
+  id: number; event_type: 'DISPATCH_ALERT' | 'EOD_DIGEST' | 'LOW_STOCK' | 'WA_TEMPLATE';
+  aggregate_id: string | null; attempts: number;
+  payload: { date?: string; sent_to?: string[]; to?: string[]; template?: string; params?: string[]; kind?: string };
 }
 
 Deno.serve(async (req) => {
@@ -37,6 +38,20 @@ Deno.serve(async (req) => {
     let firstId: string | null = null;
     try {
       let template: string, params: string[];
+      // Ready-made messages (clock-in / clock-out reminders, owner daily summary): the database
+      // already chose the template, the values and the recipients.
+      if (row.event_type === 'WA_TEMPLATE') {
+        const to = row.payload.to ?? [];
+        if (!row.payload.template || !to.length) throw new WhatsAppError('message has no template or recipient', undefined, false);
+        for (const n of to) {
+          if (sentTo.has(n)) continue;
+          const { messageId } = await sendTemplate(cfg, n, row.payload.template, (row.payload.params ?? []).map((p) => clean(p, 1000)));
+          firstId ??= messageId;
+          sentTo.add(n);
+        }
+        await db.rpc('wa_mark_sent', { p_id: row.id, p_message_id: firstId, p_sent_to: [...sentTo] });
+        return;
+      }
       if (row.event_type === 'DISPATCH_ALERT') {
         const { data, error } = await db.rpc('wa_dispatch_payload', { p_dispatch: row.aggregate_id });
         if (error || !data) throw new Error(error?.message ?? 'dispatch not found');

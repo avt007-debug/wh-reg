@@ -699,6 +699,53 @@ SELECT t.ok((SELECT (w->>'skus_at_list_price')::int >= 1 AND (w->>'valuation')::
 SELECT t.ok((SELECT x->>'value_basis' = 'LIST' AND (x->>'value')::numeric = 40 * 480 FROM jsonb_array_elements(public.owner_stock_list(:WHB)) x WHERE x->>'sku_code' = 'TAK002'),
             'Stock page uses the same rule');
 
+\echo '── WhatsApp reminders + owner daily summary'
+RESET ROLE;
+UPDATE users SET phone = '9876543210' WHERE id = :EMPA;
+UPDATE users SET phone = '9000000001' WHERE role = 'OWNER';
+SELECT t.ok(app.wa_number('98765 43210') = '919876543210' AND app.wa_number('+91 98765-43210') = '919876543210' AND app.wa_number('12345') IS NULL,
+            'phone numbers normalised for WhatsApp');
+SELECT t.ok(app.inr(1234567.4) = '₹12,34,567' AND app.inr(999) = '₹999', 'rupees in Indian format');
+SELECT t.ok(app.wa_list(ARRAY['aaaa','bbbb','cccc','dddd'], 22) LIKE 'aaaa; bbbb%+% more', 'long lists end with +N more');
+-- clock-in reminder at 09:05 IST on a Monday for anyone not clocked in
+SELECT app.run_schedules('2026-11-16 03:35:00+00') AS rs \gset
+SELECT t.ok(:'rs'::jsonb ? 'clock_in' AND NOT (:'rs'::jsonb ? 'summary'), '09:05 Monday → clock-in reminders only');
+SELECT t.ok(EXISTS (SELECT 1 FROM notification_outbox WHERE dedupe_key = 'wa:clockin:2026-11-16:' || :EMPA
+                    AND payload->>'template' = 'clock_in_reminder' AND payload->'to' = '["919876543210"]'),
+            'WhatsApp clock-in reminder queued to the employee''s number');
+SELECT t.ok(EXISTS (SELECT 1 FROM notifications WHERE user_id = :EMPA AND kind = 'CLOCK_IN_REMINDER'), 'in-app reminder too');
+SELECT app.run_schedules('2026-11-16 03:40:00+00') \g /dev/null
+SELECT t.ok((SELECT count(*) FROM notification_outbox WHERE dedupe_key LIKE 'wa:clockin:2026-11-16:%' AND aggregate_id = :EMPA) = 1, 'sent once per day');
+SELECT t.ok(NOT (app.run_schedules('2026-11-22 03:35:00+00') ? 'clock_in'), 'no reminders on Sunday (not a working day)');
+SELECT t.ok(NOT (app.run_schedules('2026-11-16 02:00:00+00') ? 'clock_in'), 'nothing before 09:00');
+-- clock-out reminder only for people still clocked in
+INSERT INTO attendance(user_id, work_date, clock_in_at) VALUES (:EMPA, '2026-11-17', '2026-11-17 03:30:00+00');
+SELECT app.run_schedules('2026-11-17 13:05:00+00') AS rs2 \gset
+SELECT t.ok(:'rs2'::jsonb ? 'clock_out' AND EXISTS (SELECT 1 FROM notification_outbox WHERE dedupe_key = 'wa:clockout:2026-11-17:' || :EMPA
+            AND payload->'params'->>1 = '09:00 AM'), '18:35 → clock-out reminder with clock-in time');
+UPDATE attendance SET clock_out_at = '2026-11-17 13:10:00+00' WHERE user_id = :EMPA AND work_date = '2026-11-17';
+-- owner summary at 20:00
+SELECT app.run_schedules('2026-11-17 14:31:00+00') AS rs3 \gset
+SELECT t.ok(:'rs3'::jsonb ? 'summary', '20:01 → owner daily summary');
+SELECT t.ok((SELECT payload->>'template' = 'daily_owner_summary' AND jsonb_array_length(payload->'params') = 5
+                    AND payload->'to' ? '919000000001' AND length(array_to_string(ARRAY(SELECT jsonb_array_elements_text(payload->'params')), '')) < 900
+               FROM notification_outbox WHERE dedupe_key = 'wa:summary:2026-11-17'),
+            'summary goes to the owner''s WhatsApp, 5 short values');
+SELECT t.ok((SELECT payload->'params'->>3 FROM notification_outbox WHERE dedupe_key = 'wa:summary:2026-11-17') LIKE '%09:00 AM-06:40 PM%',
+            'summary lists clock-in / clock-out times');
+SELECT t.ok(NOT (app.run_schedules('2026-11-17 14:40:00+00') ? 'summary'), 'summary sent only once');
+:AS_OWNER
+SELECT t.ok(public.owner_daily_report('2026-11-17') ? 'sales' AND public.owner_daily_report('2026-11-17') ? 'market_runs', 'owner can open the daily report');
+SELECT t.ok((public.owner_save_notification_settings('{"clock_in":{"enabled":true,"time":"09:30"},"work_days":[1,2,3,4,5,6,7]}')->'clock_in'->>'time') = '09:30',
+            'owner changes reminder time and days');
+SELECT t.throws($$SELECT public.owner_save_notification_settings('{"clock_in":{"enabled":true,"time":"9am"}}')$$, 'WH005', 'bad time refused');
+SELECT t.ok((public.my_notifications()->>'unread')::int >= 1, 'owner sees the summary in the bell');
+SELECT t.ok(public.mark_notifications_read() >= 1, 'mark all read');
+SELECT t.ok((public.my_notifications()->>'unread')::int = 0, 'nothing unread after that');
+:AS_EMPA
+SELECT t.throws($$SELECT public.owner_daily_report()$$, 'WH002', 'employees cannot open the owner report');
+SELECT t.ok((public.my_notifications()->>'unread')::int >= 1, 'employee sees reminders in the bell');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

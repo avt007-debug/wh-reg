@@ -4,19 +4,18 @@
  * Creating logins / passwords goes through the `admin-users` Edge Function
  * (Supabase Auth admin API never ships in the app).
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { rpc } from '../../src/api/client';
 import { StaffAdmin } from '../../src/components/StaffAdmin';
-import { Button, Card, Field, Label, Row, Screen, Section, ThemeSwitch } from '../../src/components/ui';
+import { Button, Card, Field, Label, Screen, Section, ThemeSwitch } from '../../src/components/ui';
 import { WarehouseAdmin } from '../../src/components/WarehouseAdmin';
+import { ReminderSettings } from '../../src/components/ReminderSettings';
 import { notify } from '../../src/lib/dialogs';
 
-interface OutboxRow { id: number; event_type: string; status: string; attempts: number; last_error: string | null; created_at: string }
 
 export default function Settings() {
   const qc = useQueryClient();
-  const outbox = useQuery({ queryKey: ['outbox'], queryFn: () => rpc<OutboxRow[]>('owner_notifications', { p_limit: 10 }) });
   const [pin, setPin] = useState('');
   const savePin = useMutation({
     mutationFn: () => rpc('owner_set_override_pin', { p_pin: pin }),
@@ -40,13 +39,7 @@ export default function Settings() {
         <Button title="Save PIN" onPress={() => savePin.mutate()} busy={savePin.isPending} disabled={!/^\d{6,8}$/.test(pin)} />
       </Card>
 
-      <Card title="WhatsApp alerts (latest)">
-        {outbox.data?.map((o) => (
-          <Row key={o.id} left={o.event_type.replace('_', ' ').toLowerCase()} sub={o.last_error ?? o.created_at.slice(0, 16).replace('T', ' ')}
-            right={o.status} />
-        ))}
-        {!outbox.data?.length ? <Label muted>No alerts yet</Label> : null}
-      </Card>
+      <ReminderSettings />
     </Screen>
   );
 }

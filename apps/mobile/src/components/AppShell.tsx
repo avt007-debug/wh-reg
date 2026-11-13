@@ -11,6 +11,7 @@ import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/store';
 import { useTheme } from '../theme';
+import { NotificationBell } from './NotificationBell';
 import { glass, pageBgFixed, ThemeSwitch, ThemeToggleButton, type IconName } from './ui';
 
 export interface NavItem { name: string; title: string; icon: IconName; hint: string }
@@ -204,6 +205,7 @@ export function AppHeader({ route, options, sections, right }: HeaderProps & { s
           {item?.hint ? <Text style={{ color: t.textMuted, fontSize: 13 }} numberOfLines={wide ? 1 : 2}>{item.hint}</Text> : null}
         </View>
         {right}
+        <NotificationBell />
         <ThemeToggleButton />
       </View>
     </View>

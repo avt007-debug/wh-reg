@@ -19,9 +19,9 @@ case "${1:-}" in
     ;;
   --plain)
     : "${ADMIN_URL:?ADMIN_URL (superuser connection to the 'postgres' db) is required}"
-    DB="whreg_test_$$"
+    DB="${KEEP_DB:-whreg_test_$$}"
     psql "$ADMIN_URL" -qX -c "CREATE DATABASE $DB"
-    trap 'psql "$ADMIN_URL" -qX -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)"' EXIT
+    [ -n "${KEEP_DB:-}" ] || trap 'psql "$ADMIN_URL" -qX -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)"' EXIT
     DB_URL="$(echo "$ADMIN_URL" | sed -E "s#/postgres(\?|$)#/$DB\1#")"
     psql "$DB_URL" -qX -v ON_ERROR_STOP=1 -f "$DIR/tests/stub/supabase_stub.sql" >/dev/null
     for f in "$DIR"/migrations/*.sql; do
