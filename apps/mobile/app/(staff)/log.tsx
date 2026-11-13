@@ -1,3 +1,4 @@
+import { MyAccount } from '../../src/components/MyAccount';
 import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
@@ -26,6 +27,7 @@ export default function MyDay() {
           sub={`${p.vendor_invoice_no} · ${p.status === 'PENDING' ? '⏳ waiting for owner approval' : p.status === 'POSTED' ? '✓ approved, added to stock' : '✕ rejected'}`} />)}
       </Card>
       <Label muted>Entries are locked once saved. Ask the owner to cancel a wrong entry, then re-enter it.</Label>
+      <MyAccount />
       <Card title="Appearance" icon="color-palette-outline" subtitle="Day, Auto (follows your phone) or Night"><ThemeSwitch /></Card>
       <Button title="Log out" icon="log-out-outline" kind="secondary" onPress={() => void logout()} />
     </Screen>

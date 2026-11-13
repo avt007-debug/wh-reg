@@ -43,7 +43,10 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_BASE_URL: /${{ github.event.repository.name }}
-        run: npx expo export --platform web
+        run: |
+          export EXPO_PUBLIC_BUILD_ID="$(date -u +%Y%m%d%H%M)-$(git rev-parse --short=7 HEAD)"
+          npx expo export --platform web
+          printf '{"build":"%s"}\n' "$EXPO_PUBLIC_BUILD_ID" > dist/version.json
       - name: Make it installable on phones (icon, full screen)
         working-directory: apps/mobile
         run: node scripts/pwa-head.mjs dist /${{ github.event.repository.name }}

@@ -3,7 +3,7 @@
  * which must never ship in the app). Called by the app with the owner's own
  * session token: supabase.functions.invoke('admin-users', { body }).
  *
- *   { action: 'create', loginId, fullName, phone?, role, primaryWarehouseId?, password }
+ *   { action: 'create', loginId, fullName, phone?, role, primaryWarehouseId?, password, force? }  // 409 'duplicate' unless force
  *   { action: 'set_password', userId, password? }      // no password ⇒ a new one is generated and returned
  *   { action: 'update_profile', userId, loginId?, fullName?, phone?, primaryWarehouseId? }
  *   { action: 'set_active', userId, active }          // also bans/unbans the Auth user
@@ -45,15 +45,25 @@ Deno.serve(async (req) => {
   if (!caller?.is_active || !['OWNER', 'ADMIN'].includes(caller.role)) return json({ error: 'owner/admin only' }, 403);
 
   const b = await req.json().catch(() => ({}));
-  const pwOk = (p: unknown) => typeof p === 'string' && p.length >= 10 && /[A-Za-z]/.test(p) && /\d/.test(p);
+  // At least 8 characters — easy enough to type on a phone; the login locks after repeated wrong tries.
+  const pwOk = (p: unknown) => typeof p === 'string' && p.length >= 8 && p.length <= 72 && !/^\s|\s$/.test(p);
+  const PW_RULE = 'Password: at least 8 characters (no space at the start or end)';
+  const revoke = (userId: string) => db.rpc('svc_revoke_sessions', { p_user: userId });
 
   if (b.action === 'create') {
     if (!LOGIN_RE.test(b.loginId ?? '')) return json({ error: 'User ID: 3–32 letters, digits, . _ -' }, 422);
     if (!ROLES.includes(b.role)) return json({ error: 'invalid role' }, 422);
     if (b.role === 'EMPLOYEE' && !b.primaryWarehouseId) return json({ error: 'Employees need a warehouse' }, 422);
-    if (!pwOk(b.password)) return json({ error: 'Password: at least 10 characters with letters and digits' }, 422);
+    if (!pwOk(b.password)) return json({ error: PW_RULE }, 422);
     const phone = cleanPhone(b.phone);
     if (phone && !PHONE_RE.test(phone)) return json({ error: 'Mobile number must be 10 digits' }, 422);
+
+    // Same person twice? (same name or same mobile among current logins) — ask before creating.
+    if (!b.force) {
+      const { data: same } = await db.from('users').select('login_id, full_name, phone').is('removed_at', null)
+        .or([`full_name.ilike.${String(b.fullName ?? '').trim().replace(/[,()]/g, ' ')}`, phone ? `phone.eq.${phone}` : null].filter(Boolean).join(','));
+      if (same?.length) return json({ error: 'duplicate', duplicates: same }, 409);
+    }
 
     const { data: created, error } = await db.auth.admin.createUser({
       email: `${String(b.loginId).toLowerCase()}@${DOMAIN}`, password: b.password, email_confirm: true,
@@ -75,13 +85,14 @@ Deno.serve(async (req) => {
 
   if (b.action === 'set_password') {
     const password = b.password ? String(b.password) : generatePassword();
-    if (b.password && !pwOk(password)) return json({ error: 'Password: at least 10 characters with letters and digits' }, 422);
+    if (b.password && !pwOk(password)) return json({ error: PW_RULE }, 422);
     const { data: target } = await db.from('users').select('role, login_id, full_name, phone').eq('id', b.userId).maybeSingle();
     if (!target) return json({ error: 'user not found' }, 404);
     if (target.role === 'OWNER' && b.userId !== auth.user.id && caller.role !== 'OWNER') return json({ error: 'only the owner can change an owner password' }, 403);
     const { error } = await db.auth.admin.updateUserById(b.userId, { password });
     if (error) return json({ error: error.message }, 422);
     if (target.role !== 'OWNER') await db.rpc('svc_store_staff_password', { p_user: b.userId, p_password: password });
+    if (b.userId !== auth.user.id) await revoke(b.userId);       // old password stops working everywhere
     return json({ ok: true, password, loginId: target.login_id, fullName: target.full_name, phone: target.phone });
   }
 
@@ -123,6 +134,7 @@ Deno.serve(async (req) => {
     const { error: e1 } = await db.from('users')
       .update({ is_active: !removing, removed_at: removing ? new Date().toISOString() : null }).eq('id', b.userId);
     const { error: e2 } = await db.auth.admin.updateUserById(b.userId, { ban_duration: removing ? '876000h' : 'none' });
+    if (removing) await revoke(b.userId);
     return e1 || e2 ? json({ error: (e1 ?? e2)!.message }, 422) : json({ ok: true });
   }
 
@@ -131,6 +143,7 @@ Deno.serve(async (req) => {
     const { error: e1 } = await db.from('users').update({ is_active: !!b.active }).eq('id', b.userId);
     // Banning revokes refresh; RLS already blocks the user the moment is_active = false.
     const { error: e2 } = await db.auth.admin.updateUserById(b.userId, { ban_duration: b.active ? 'none' : '876000h' });
+    if (!b.active) await revoke(b.userId);
     return e1 || e2 ? json({ error: (e1 ?? e2)!.message }, 422) : json({ ok: true });
   }
 

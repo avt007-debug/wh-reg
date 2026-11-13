@@ -746,6 +746,53 @@ SELECT t.ok((public.my_notifications()->>'unread')::int = 0, 'nothing unread aft
 SELECT t.throws($$SELECT public.owner_daily_report()$$, 'WH002', 'employees cannot open the owner report');
 SELECT t.ok((public.my_notifications()->>'unread')::int >= 1, 'employee sees reminders in the bell');
 
+\echo '── Login security'
+:AS_ANON
+SELECT t.ok(public.login_precheck('ravi.wha')->'locked_until' = 'null'::jsonb, 'no lock before failures');
+SELECT public.login_failed('Ravi.WHA', 'dev-aaaaaaaa', 'Test phone') FROM generate_series(1, 4) \g /dev/null
+SELECT t.ok(public.login_precheck('ravi.wha')->'locked_until' = 'null'::jsonb, '4 wrong passwords: not locked yet');
+SELECT t.ok(public.login_failed('ravi.wha', 'dev-aaaaaaaa', 'Test phone')->'locked_until' <> 'null'::jsonb, '5th wrong password locks the User ID');
+SELECT t.ok(public.login_precheck('nobody-here')->'locked_until' = 'null'::jsonb, 'unknown IDs look the same (no hint)');
+RESET ROLE;
+SELECT t.ok(EXISTS (SELECT 1 FROM notifications n JOIN users u ON u.id = n.user_id WHERE u.role = 'OWNER' AND n.kind = 'LOGIN_ALERT'), 'owner is alerted');
+:AS_OWNER
+SELECT t.ok(jsonb_array_length(public.owner_login_activity()->'locked') >= 1, 'owner sees the locked User ID');
+SELECT public.owner_unlock_login('ravi.wha') \g /dev/null
+SELECT t.ok(public.login_precheck('ravi.wha')->'locked_until' = 'null'::jsonb, 'owner unlocks it');
+-- devices + approval
+SELECT public.owner_save_security_settings('{"require_device_approval": true}') \g /dev/null
+:AS_EMPA
+SELECT t.ok((public.session_start('dev-first-phone', 'Ravi phone')->>'allowed')::boolean, 'first phone of an employee is approved automatically');
+SELECT t.ok(public.session_start('dev-second-phone', 'Unknown phone')->>'reason' = 'DEVICE_PENDING', 'a new phone waits for the owner');
+:AS_OWNER
+SELECT public.owner_set_device(:EMPA, 'dev-second-phone', 'APPROVED') \g /dev/null
+SELECT public.owner_save_security_settings('{"require_device_approval": false}') \g /dev/null
+:AS_EMPA
+SELECT t.ok((public.session_check('dev-second-phone', NULL)->>'allowed')::boolean, 'approved phone works');
+SELECT (public.session_check('dev-first-phone', NULL)->>'session_version')::int AS sv \gset
+:AS_OWNER
+SELECT public.owner_logout_everywhere(:EMPA) \g /dev/null
+:AS_EMPA
+SELECT t.ok(public.session_check('dev-first-phone', :sv)->>'reason' = 'SIGNED_OUT_BY_OWNER', 'log out everywhere signs the employee out');
+:AS_OWNER
+SELECT public.owner_save_security_settings('{"staff_hours": {"enabled": true, "from": "00:00", "to": "00:01"}}') \g /dev/null
+:AS_EMPA
+SELECT t.ok(public.session_check('dev-first-phone', NULL)->>'reason' = 'OUTSIDE_HOURS', 'employee blocked outside login hours');
+:AS_OWNER
+SELECT t.ok((public.session_check('dev-owner', NULL)->>'allowed')::boolean, 'owner is never limited by login hours');
+SELECT public.owner_save_security_settings('{"staff_hours": {"enabled": false, "from": "07:00", "to": "21:00"}}') \g /dev/null
+SELECT t.throws($$SELECT public.owner_save_security_settings('{"staff_hours": {"enabled": true, "from": "21:00", "to": "07:00"}}')$$, 'WH005', 'bad hours refused');
+-- recovery codes
+SELECT public.owner_new_recovery_codes() AS codes \gset
+SELECT t.ok(array_length(:'codes'::text[], 1) = 8 AND public.owner_recovery_codes_left() = 8, '8 one-time recovery codes');
+RESET ROLE;
+SELECT t.ok(public.svc_use_recovery_code((SELECT login_id FROM users WHERE role = 'OWNER' LIMIT 1), (:'codes'::text[])[1]) IS NOT NULL, 'a recovery code works');
+SELECT t.ok(public.svc_use_recovery_code((SELECT login_id FROM users WHERE role = 'OWNER' LIMIT 1), (:'codes'::text[])[1]) IS NULL, '… only once');
+SELECT t.ok(public.svc_use_recovery_code((SELECT login_id FROM users WHERE role = 'OWNER' LIMIT 1), 'XXXX-YYYY') IS NULL, 'wrong code refused');
+:AS_EMPA
+SELECT t.throws($$SELECT public.owner_new_recovery_codes()$$, 'WH002', 'employees cannot create recovery codes');
+SELECT t.throws($$SELECT public.owner_login_activity()$$, 'WH002', 'employees cannot see login history');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================
@@ -765,8 +812,9 @@ SELECT t.ok(NOT EXISTS (
   'anon has no table privileges at all');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-   WHERE n.nspname IN ('public','app','fin') AND has_function_privilege('anon', p.oid, 'EXECUTE')),
-  'anon can execute no app functions');
+   WHERE n.nspname IN ('public','app','fin') AND has_function_privilege('anon', p.oid, 'EXECUTE')
+     AND p.proname NOT IN ('login_precheck', 'login_failed')),
+  'anon can execute no app functions (except the two login-screen checks)');
 
 UPDATE dispatches SET created_at = now() - interval '1 day' WHERE id = (:'d1'::jsonb->>'id')::uuid;
 :AS_EMPA

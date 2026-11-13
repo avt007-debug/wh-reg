@@ -183,10 +183,20 @@ function AddStaff({ onCreated }: { onCreated: () => void }) {
   const [created, setCreated] = useState<{ name: string; loginId: string; password: string; phone: string } | null>(null);
 
   const create = useMutation({
-    mutationFn: () => edge('admin-users', {
-      action: 'create', loginId: loginId.trim(), fullName: fullName.trim(), role, password, phone: phone.trim() || undefined,
-      primaryWarehouseId: role === 'EMPLOYEE' ? wh : undefined,
-    }),
+    mutationFn: async () => {
+      const body = { action: 'create', loginId: loginId.trim(), fullName: fullName.trim(), role, password, phone: phone.trim() || undefined,
+        primaryWarehouseId: role === 'EMPLOYEE' ? wh : undefined };
+      try {
+        return await edge('admin-users', body);
+      } catch (e) {
+        // Same name or mobile already has a login → ask before making a second one.
+        const dup = (e as { details?: { error?: string; duplicates?: { login_id: string; full_name: string; phone: string | null }[] } }).details;
+        if (dup?.error !== 'duplicate') throw e;
+        const list = (dup.duplicates ?? []).map((d) => `${d.full_name} (${d.login_id}${d.phone ? `, ${d.phone}` : ''})`).join(', ');
+        if (!(await confirmAsk('Already has a login?', `Existing: ${list}. Create another login anyway?`, 'Create anyway'))) throw new Error('Not created — the person already has a login.');
+        return edge('admin-users', { ...body, force: true });
+      }
+    },
     onSuccess: () => {
       setCreated({ name: fullName.trim(), loginId: loginId.trim(), password, phone: phone.trim() });
       setLoginId(''); setFullName(''); setPassword(''); setPhone('');
@@ -194,7 +204,7 @@ function AddStaff({ onCreated }: { onCreated: () => void }) {
     },
     onError: (e) => notify('Login not created', e instanceof Error ? e.message : String(e)),
   });
-  const pwOk = password.length >= 10 && /[A-Za-z]/.test(password) && /\d/.test(password);
+  const pwOk = password.length >= 8 && !/^\s|\s$/.test(password);
 
   return (
     <Card title="Add employee">
@@ -219,7 +229,7 @@ function AddStaff({ onCreated }: { onCreated: () => void }) {
         </>
       ) : null}
       <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
-        <Field label="Password (min 10, letters + digits)" value={password} onChangeText={setPassword} autoCapitalize="none" />
+        <Field label="Password (at least 8 characters, easy to type)" value={password} onChangeText={setPassword} autoCapitalize="none" />
         <SmallButton title="Make one" onPress={() => setPassword(generatePassword())} />
       </View>
       <Button title="Create login" onPress={() => create.mutate()} busy={create.isPending}

@@ -11,6 +11,8 @@ import { StaffAdmin } from '../../src/components/StaffAdmin';
 import { Button, Card, Field, Label, Screen, Section, ThemeSwitch } from '../../src/components/ui';
 import { WarehouseAdmin } from '../../src/components/WarehouseAdmin';
 import { ReminderSettings } from '../../src/components/ReminderSettings';
+import { MyAccount } from '../../src/components/MyAccount';
+import { LoginSecurity, RecoveryCodes } from '../../src/components/LoginSecurity';
 import { notify } from '../../src/lib/dialogs';
 
 
@@ -25,6 +27,7 @@ export default function Settings() {
 
   return (
     <Screen>
+      <MyAccount />
       <Card title="Appearance" icon="color-palette-outline" subtitle="Day is bright for daylight; Night is dark and easy on the eyes. Auto follows your phone or computer.">
         <ThemeSwitch />
       </Card>
@@ -32,6 +35,8 @@ export default function Settings() {
       <StaffAdmin />
       <WarehouseAdmin />
       <Section title="Security & alerts" />
+      <LoginSecurity />
+      <RecoveryCodes />
 
       <Card title="My Admin Override PIN">
         <Label muted>Staff need this PIN to dispatch more than the physical stock. 6–8 digits.</Label>

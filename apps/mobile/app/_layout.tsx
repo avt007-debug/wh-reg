@@ -7,6 +7,8 @@ import { useTheme } from '../src/theme';
 import { isOwner, useAuth } from '../src/auth/store';
 import { PromptHost } from '../src/lib/dialogs';
 import { pageBgFixed } from '../src/components/ui';
+import { SessionGuard } from '../src/components/SessionGuard';
+import { UpdateBanner } from '../src/components/UpdateBanner';
 
 
 /**
@@ -62,6 +64,8 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <ThemeChrome />
       <Navigator />
+      <UpdateBanner />
+      <SessionGuard />
       <PromptHost />
     </QueryClientProvider>
   );

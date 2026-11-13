@@ -44,9 +44,9 @@ export async function q<T>(builder: PromiseLike<{ data: T | null; error: PgErr |
 export async function edge<T>(name: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(name, { body });
   if (error) {
-    let msg = error.message;
-    try { msg = (await (error as { context?: Response }).context?.json())?.error ?? msg; } catch { /* keep */ }
-    throw new ApiError('VALIDATION', msg);
+    let msg = error.message; let body: unknown;
+    try { body = await (error as { context?: Response }).context?.json(); msg = (body as { error?: string })?.error ?? msg; } catch { /* keep */ }
+    throw new ApiError('VALIDATION', msg, body);
   }
   return data as T;
 }
