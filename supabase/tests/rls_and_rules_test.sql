@@ -688,6 +688,17 @@ SELECT t.ok(jsonb_array_length(public.stock_all_warehouses('oldtak2')->'items') 
 :AS_ANON
 SELECT t.throws($$SELECT public.stock_all_warehouses()$$, '42501', 'anonymous cannot see stock');
 
+\echo '── Stock value falls back to list price when there is no purchase cost'
+:AS_OWNER
+SELECT t.ok((SELECT (x->>'valueBasis') = 'LIST' AND (x->>'totalValue')::numeric = 40 * 480
+              FROM jsonb_array_elements(public.owner_stock_overview()->'items') x WHERE x->>'sku' = 'TAK002'),
+            'opening stock with no purchase is valued at list price (40 × ₹480)');
+SELECT t.ok((SELECT (w->>'skus_at_list_price')::int >= 1 AND (w->>'valuation')::numeric > 0
+              FROM jsonb_array_elements(public.owner_stock_overview()->'warehouses') w WHERE (w->>'warehouse_id')::uuid = :WHB),
+            'warehouse total includes it and counts items valued at list price');
+SELECT t.ok((SELECT x->>'value_basis' = 'LIST' AND (x->>'value')::numeric = 40 * 480 FROM jsonb_array_elements(public.owner_stock_list(:WHB)) x WHERE x->>'sku_code' = 'TAK002'),
+            'Stock page uses the same rule');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

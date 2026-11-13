@@ -22,7 +22,7 @@ import { useTheme } from '../../src/theme';
 interface StockItem {
   product_id: string; sku_code: string; name: string; brand_id: string | null; brand: string | null; category: string | null;
   search: string; base_uom_name: string | null; uoms: Uom[]; avg_cost: number | null;
-  qty: number; in_transit: number; value: number; per_warehouse: Record<string, number>;
+  qty: number; in_transit: number; value: number; value_basis?: 'COST' | 'LIST' | 'NONE'; per_warehouse: Record<string, number>;
   hsn_code: string | null; gst_rate: number; mrp: number | null; selling_price: number | null;
   last_entry: { by: string; at: string; movement: string; qty: number } | null;
 }
@@ -76,7 +76,7 @@ export default function OwnerStock() {
       { header: 'Category', width: 26 },
       ...(codes.length > 1 ? codes.map((c) => ({ header: `${whs.data?.find((w) => w.code === c)?.name ?? c} qty`, kind: 'number' as const })) : []),
       { header: 'Total qty', kind: 'number' }, { header: 'Unit', width: 8 }, { header: 'In packs', width: 24 },
-      { header: 'Avg cost / unit', kind: 'money', width: 16 }, { header: 'Stock value', kind: 'money', width: 16 },
+      { header: 'Avg cost / unit', kind: 'money', width: 16 }, { header: 'Stock value', kind: 'money', width: 16 }, { header: 'Valued at', width: 12 },
       { header: 'HSN', width: 10 }, { header: 'GST %', kind: 'number', width: 7 },
       { header: 'Price before GST', kind: 'money', width: 16 }, { header: 'MRP incl. GST', kind: 'money', width: 14 },
       { header: 'Last stock entry by', width: 22 }, { header: 'Last entry at', width: 20 },
@@ -85,7 +85,7 @@ export default function OwnerStock() {
       i.sku_code, i.name, i.brand, i.category,
       ...(codes.length > 1 ? codes.map((c) => Number(i.per_warehouse[c] ?? 0)) : []),
       Number(i.qty), i.base_uom_name, formatBreakdown(Number(i.qty), i.uoms),
-      i.avg_cost != null ? Number(i.avg_cost) : null, Number(i.value),
+      i.avg_cost != null ? Number(i.avg_cost) : null, Number(i.value), i.value_basis === 'LIST' ? 'List price' : i.value_basis === 'NONE' ? 'No price' : 'Cost',
       i.hsn_code, Number(i.gst_rate), i.selling_price != null ? Number(i.selling_price) : null, i.mrp != null ? Number(i.mrp) : null,
       i.last_entry?.by ?? null, i.last_entry ? dateTimeIST(i.last_entry.at) : null,
     ]),
@@ -109,7 +109,8 @@ export default function OwnerStock() {
       </Toolbar>
 
       <Card title={`${whName} · ${brandName}`} subtitle="Quantity on hand, cost and value per item — tap an item to edit it">
-        <Row left={`${rows.length} item(s)`} right={formatINR(totalValue)} sub="stock value at net purchase cost" />
+        <Row left={`${rows.length} item(s)`} right={formatINR(totalValue)}
+          sub={`stock value at net purchase cost${rows.some((i) => i.value_basis === 'LIST' && Number(i.qty) > 0) ? '; items never purchased are valued at list price (marked “list”)' : ''}`} />
         {rows.map((i) => (
           <Pressable key={i.product_id} onPress={() => setEdit(i.product_id)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderBottomWidth: 0.5, borderColor: t.border }}>
@@ -130,7 +131,7 @@ export default function OwnerStock() {
             </View>
             <View style={{ alignItems: 'flex-end', gap: 2 }}>
               <Text style={{ color: Number(i.qty) > 0 ? t.text : t.danger, fontWeight: '700' }}>{formatBreakdown(Number(i.qty), i.uoms)}</Text>
-              <Text style={{ color: t.textMuted, fontSize: 12 }}>{formatINR(Number(i.value))}</Text>
+              <Text style={{ color: t.textMuted, fontSize: 12 }}>{formatINR(Number(i.value))}{i.value_basis === 'LIST' && Number(i.qty) > 0 ? ' · list' : i.value_basis === 'NONE' && Number(i.qty) > 0 ? ' · no price' : ''}</Text>
             </View>
             <SmallButton title="Edit" onPress={() => setEdit(i.product_id)} />
           </Pressable>

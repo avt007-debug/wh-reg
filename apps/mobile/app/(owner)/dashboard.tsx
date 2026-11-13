@@ -36,7 +36,7 @@ export default function Dashboard() {
   });
   const stock = useQuery({
     queryKey: ['stock-overview'],
-    queryFn: () => rpc<{ warehouses: { warehouse_id: string; warehouse_code: string; valuation: number }[] }>('owner_stock_overview'),
+    queryFn: () => rpc<{ warehouses: { warehouse_id: string; warehouse_code: string; valuation: number; units: number | null; skus_in_stock: number; skus_at_list_price: number; skus_without_price: number }[] }>('owner_stock_overview'),
   });
   const topFrom = topPeriod === 'This month' ? m0 : m11;
   const top = useQuery({
@@ -57,7 +57,17 @@ export default function Dashboard() {
     (pts ?? []).filter(pred).reduce((a, p) => a + Number(p.revenue_excl_gst), 0);
   const salesToday = sum(month.data, (p) => p.bucket === today);
   const salesMonth = sum(month.data);
-  const valuation = (stock.data?.warehouses ?? []).filter((w) => !wh || w.warehouse_id === wh).reduce((a, w) => a + Number(w.valuation), 0);
+  const whRows = (stock.data?.warehouses ?? []).filter((w) => !wh || w.warehouse_id === wh);
+  const valuation = whRows.reduce((a, w) => a + Number(w.valuation), 0);
+  const skus = whRows.reduce((a, w) => a + Number(w.skus_in_stock ?? 0), 0);
+  const units = whRows.reduce((a, w) => a + Number(w.units ?? 0), 0);
+  const atList = whRows.reduce((a, w) => a + Number(w.skus_at_list_price ?? 0), 0);
+  const noPrice = whRows.reduce((a, w) => a + Number(w.skus_without_price ?? 0), 0);
+  const valueNote = [
+    `${skus} items · ${units.toLocaleString('en-IN')} pcs`,
+    atList ? `${atList} at list price (no purchase cost yet)` : 'at purchase cost',
+    noPrice ? `${noPrice} without a price` : null,
+  ].filter(Boolean).join(' · ');
   const toReorder = (alerts.data ?? []).filter((a) => !wh || a.warehouse_id === wh).length;
 
   const codes = (whs.data ?? []).filter((w) => !wh || w.id === wh).map((w) => w.code);
@@ -96,7 +106,7 @@ export default function Dashboard() {
         <Stat label="Sales today" value={formatINR(salesToday)} sub="excl. GST" />
         <Stat label={`Sales in ${monthLabel(m0)}`} value={formatINR(salesMonth)}
           sub={lastMonth ? `${monthLabel(monthStart(1))}: ${formatINR(lastMonth)}` : 'excl. GST'} />
-        <Stat label="Stock value" value={formatINR(valuation)} sub={`at cost · ${toReorder} to reorder`} />
+        <Stat label="Stock value" value={formatINR(valuation)} sub={valueNote} />
       </View>
       <Section title="Money" hint="All warehouses" />
       <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
