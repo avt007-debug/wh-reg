@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Role } from '@wh/shared';
 import type { Me } from '../api/types';
 import { rpc } from '../api/client';
+import { queryClient } from '../lib/queryClient';
 import { loginEmail, supabase } from '../lib/supabase';
 
 export interface SessionUser { id: string; fullName: string; role: Role; warehouseId: string | null }
@@ -29,12 +30,13 @@ export const useAuth = create<AuthState>((set) => ({
     const user = data.session ? await loadProfile().catch(() => null) : null;
     set({ user, hydrated: true });
     supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') set({ user: null });
+      if (event === 'SIGNED_OUT') { queryClient.clear(); set({ user: null }); }
     });
   },
   async signIn(loginId, password) {
     const { error } = await supabase.auth.signInWithPassword({ email: loginEmail(loginId), password });
     if (error) throw new Error(error.status === 400 ? 'Invalid User ID or password' : error.message);
+    queryClient.clear();                     // never show cached data from a previous login
     const user = await loadProfile();
     if (!user) {
       await supabase.auth.signOut();
@@ -43,7 +45,8 @@ export const useAuth = create<AuthState>((set) => ({
     set({ user });
   },
   async signOut() {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut().catch(() => undefined);   // still log out locally if offline
+    queryClient.clear();
     set({ user: null });
   },
 }));

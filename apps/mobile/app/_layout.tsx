@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '../src/lib/queryClient';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StatusBar, View } from 'react-native';
@@ -7,9 +8,6 @@ import { isOwner, useAuth } from '../src/auth/store';
 import { PromptHost } from '../src/lib/dialogs';
 import { pageBgFixed } from '../src/components/ui';
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
-});
 
 /**
  * Sign-in guard (Expo Router Stack.Protected). It only decides which screens

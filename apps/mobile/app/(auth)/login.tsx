@@ -21,7 +21,7 @@ export default function Login() {
       await signIn(loginId.trim(), password.trim());   // root gate routes to owner or staff area by role
     } catch (e) {
       const m = e instanceof Error ? e.message : '';
-      setErr(/invalid login credentials/i.test(m)
+      setErr(/invalid/i.test(m)
         ? 'Wrong User ID or password. Check the spelling (passwords are case-sensitive) or ask the owner to reset it in Settings.'
         : m || 'Cannot reach server. Check Wi-Fi / data.');
     } finally { setBusy(false); }
