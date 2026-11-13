@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
-import { Button, Card, Chips, Empty, Field, HBar, Label, Progress, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
+import { Button, Card, Chips, Empty, Field, HBar, Label, Progress, Row, Screen, SmallButton, Toolbar, pageBg } from '../../src/components/ui';
 import { dateTimeIST, dmy, hoursLabel, monthLabel, monthLong, monthStart, timeIST } from '../../src/lib/dates';
 import { askText, notify } from '../../src/lib/dialogs';
 import { exportXlsx } from '../../src/lib/exportFile';
@@ -242,7 +242,7 @@ function EmployeeDetail({ emp, month: initialMonth, onClose }: { emp: Emp; month
   const maxSales = Math.max(0, ...(data?.trend ?? []).map((m) => n(m.stats.sales)));
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
-      <ScrollView style={{ flex: 1, backgroundColor: t.surface }}
+      <ScrollView style={[{ flex: 1 }, pageBg(t)]}
         contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 860, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ flex: 1 }}>

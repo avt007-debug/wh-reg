@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Tabs } from 'expo-router';
 import { rpc } from '../../src/api/client';
 import { AppHeader, AppTabBar, useWide, type NavSection } from '../../src/components/AppShell';
+import { pageBgFixed } from '../../src/components/ui';
 import { useTheme } from '../../src/theme';
 
 /** Owner menu, grouped. "hint" is the one-line explanation shown under each page title. */
@@ -37,7 +38,7 @@ export default function OwnerLayout() {
       screenOptions={{
         tabBarPosition: wide ? 'left' : 'bottom',
         header: (p) => <AppHeader {...p} sections={SECTIONS} />,
-        sceneStyle: { backgroundColor: t.bg },
+        sceneStyle: pageBgFixed(t),
       }}>
       {SECTIONS.flatMap((s) => s.items).map((it) => (
         <Tabs.Screen key={it.name} name={it.name}

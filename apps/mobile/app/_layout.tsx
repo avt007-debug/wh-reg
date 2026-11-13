@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StatusBar, View } from 'react-native';
 import { useTheme } from '../src/theme';
 import { isOwner, useAuth } from '../src/auth/store';
 import { PromptHost } from '../src/lib/dialogs';
+import { pageBgFixed } from '../src/components/ui';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -20,10 +21,14 @@ function Navigator() {
   const { user, hydrated, hydrate } = useAuth();       // session from Supabase Auth
   useEffect(() => { void hydrate(); }, [hydrate]);
 
-  if (!hydrated) return <View style={{ flex: 1, justifyContent: 'center', backgroundColor: t.bg }}><ActivityIndicator color={t.accent} /></View>;
+  if (!hydrated) return <View style={[{ flex: 1, justifyContent: 'center' }, pageBgFixed(t)]}><ActivityIndicator color={t.accent} /></View>;
   const owner = isOwner(user);
+  // Navigation containers must be see-through so the red/yellow glow behind the glass shows.
+  const base = t.dark ? DarkTheme : DefaultTheme;
+  const navTheme = { ...base, colors: { ...base.colors, background: t.bg, card: t.nav, primary: t.accent, text: t.text, border: t.border } };
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
+    <ThemeProvider value={navTheme}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: pageBgFixed(t) }}>
       <Stack.Screen name="index" />
       <Stack.Protected guard={!user}>
         <Stack.Screen name="(auth)/login" />
@@ -35,6 +40,7 @@ function Navigator() {
         <Stack.Screen name="(staff)" />
       </Stack.Protected>
     </Stack>
+    </ThemeProvider>
   );
 }
 
@@ -45,7 +51,10 @@ function ThemeChrome() {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     document.documentElement.style.colorScheme = t.dark ? 'dark' : 'light';
     document.body.style.backgroundColor = t.bg;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.nav);
+    document.body.style.backgroundImage = t.bgImage;
+    document.body.style.backgroundAttachment = 'fixed';
+    document.body.style.backgroundSize = 'cover';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.dark ? t.bg : '#D40000');
   }, [t]);
   return <StatusBar barStyle={t.dark ? 'light-content' : 'dark-content'} />;
 }

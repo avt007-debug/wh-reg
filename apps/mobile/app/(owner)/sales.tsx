@@ -10,7 +10,7 @@ import { formatINR, splitByGst } from '@wh/shared';
 import { rpc } from '../../src/api/client';
 import { GstSplitRows, GstTag } from '../../src/components/GstSplit';
 import { BillForm } from '../../src/components/BillForm';
-import { Card, Field, Label, Row, Screen, SmallButton, Stat, Toolbar } from '../../src/components/ui';
+import { Card, Field, Label, Row, Screen, SmallButton, Stat, Toolbar, pageBg } from '../../src/components/ui';
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
 import { dateTimeIST, dmy, monthLong, monthStart } from '../../src/lib/dates';
 import { askText, notify } from '../../src/lib/dialogs';
@@ -181,7 +181,7 @@ export default function Sales() {
       {!rows.length ? <Label muted>{list.isLoading ? 'Loading…' : `No sales in ${monthLong(month)}`}</Label> : null}
 
       <Modal visible={adding} animationType="slide" onRequestClose={() => setAdding(false)}>
-        <ScrollView style={{ flex: 1, backgroundColor: t.surface }} keyboardShouldPersistTaps="handled"
+        <ScrollView style={[{ flex: 1 }, pageBg(t)]} keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={{ flex: 1, color: t.text, fontSize: 20, fontWeight: '700' }}>New sale</Text>

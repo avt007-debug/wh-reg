@@ -15,7 +15,7 @@ import { supabase } from '../lib/supabase';
 import { useOwnerWarehouse, useWarehouses } from '../lib/warehouse';
 import { useTheme } from '../theme';
 import { PriceGstField } from './PriceGstField';
-import { Button, Card, Chips, Field, Label, Row, SmallButton } from './ui';
+import { Button, Card, Chips, Field, Label, Row, SmallButton, pageBg } from './ui';
 
 interface Product {
   id: string; sku_code: string; name: string; brand_id: string | null; category_id: string | null; specification: string | null;
@@ -113,7 +113,7 @@ export function ItemEditor({ productId, visible, onClose, defaultBrandId }: {
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={close}>
-      <ScrollView style={{ flex: 1, backgroundColor: t.surface }} keyboardShouldPersistTaps="handled"
+      <ScrollView style={[{ flex: 1 }, pageBg(t)]} keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ flex: 1, color: t.text, fontSize: 20, fontWeight: '700' }}>{isNew ? 'Add item' : `Edit · ${prod.data?.name ?? ''}`}</Text>

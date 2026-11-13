@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Text, View } from 'react-native';
 import { useAuth } from '../../src/auth/store';
-import { Button, Field, Screen, ThemeSwitch } from '../../src/components/ui';
+import { Button, Field, glass, Screen, ThemeSwitch } from '../../src/components/ui';
 import { useTheme } from '../../src/theme';
 
 export default function Login() {
@@ -27,13 +27,14 @@ export default function Login() {
       <View style={{ width: '100%', maxWidth: 420, alignSelf: 'center', gap: 14, marginTop: 60 }}>
         <View style={{ alignItems: 'flex-end' }}><View style={{ width: 220 }}><ThemeSwitch /></View></View>
         <View style={{ alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="cube" size={32} color="#fff" />
+          <View style={{ width: 68, height: 68, borderRadius: 20, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: t.yellow }}>
+            <Ionicons name="cube" size={32} color={t.yellow} />
           </View>
           <Text style={{ color: t.text, fontSize: 28, fontWeight: '800' }}>WH Reg</Text>
           <Text style={{ color: t.textSecondary, textAlign: 'center' }}>Stock, sales, purchases and payments for your warehouses</Text>
         </View>
-        <View style={{ backgroundColor: t.card, borderColor: t.border, borderWidth: 1, borderRadius: 16, padding: 18, gap: 14 }}>
+        <View style={[{ backgroundColor: t.card, borderColor: t.border, borderWidth: 1, borderRadius: 18, padding: 18, gap: 14 }, glass(t, 22),
+          t.glass ? ({ boxShadow: `0 10px 40px ${t.shadow}` } as object) : null]}>
           <Field label="User ID" value={loginId} onChangeText={setLoginId} autoCapitalize="none" autoCorrect={false} placeholder="e.g. ravi" />
           <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry error={err ?? undefined} onSubmitEditing={submit} />
           <Button title="Log in" icon="log-in-outline" onPress={submit} busy={busy} disabled={!loginId || password.length < 6} />

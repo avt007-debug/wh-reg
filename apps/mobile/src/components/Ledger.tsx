@@ -15,7 +15,7 @@ import { todayIST } from '../lib/ids';
 import { openWhatsApp } from '../lib/whatsapp';
 import { useTheme } from '../theme';
 import { PartyPicker } from './PartyPicker';
-import { Button, Card, Chips, Field, Label, Row, SmallButton } from './ui';
+import { Button, Card, Chips, Field, Label, Row, SmallButton, pageBg } from './ui';
 
 export const MODES = ['CASH', 'UPI', 'NEFT', 'RTGS', 'IMPS', 'CHEQUE', 'CARD', 'OTHER'] as const;
 const n = (x: unknown) => Number(x ?? 0);
@@ -86,7 +86,7 @@ export function StatementModal({ customerId, onClose, owner = false }: { custome
 
   return (
     <Modal visible={!!customerId} animationType="slide" onRequestClose={onClose}>
-      <ScrollView style={{ flex: 1, backgroundColor: t.surface }} keyboardShouldPersistTaps="handled"
+      <ScrollView style={[{ flex: 1 }, pageBg(t)]} keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 820, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ flex: 1 }}>

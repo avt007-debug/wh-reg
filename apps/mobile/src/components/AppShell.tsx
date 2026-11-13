@@ -11,7 +11,7 @@ import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/store';
 import { useTheme } from '../theme';
-import { ThemeSwitch, ThemeToggleButton, type IconName } from './ui';
+import { glass, pageBgFixed, ThemeSwitch, ThemeToggleButton, type IconName } from './ui';
 
 export interface NavItem { name: string; title: string; icon: IconName; hint: string }
 export interface NavSection { title: string; items: NavItem[] }
@@ -74,6 +74,7 @@ function NavRow({ item, active, badge, onPress, wide }: { item: NavItem; active:
         flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: wide ? 9 : 13, paddingHorizontal: 12, borderRadius: 10,
         backgroundColor: active ? t.accentSoft : pressed || hovered ? t.cardAlt : 'transparent',
       })}>
+      {active && wide ? <View style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: t.yellow }} /> : null}
       <Ionicons name={active ? item.icon : (`${item.icon}-outline` as IconName)} size={20} color={active ? t.accent : t.textSecondary} />
       <View style={{ flex: 1 }}>
         <Text style={{ color: active ? t.accent : t.text, fontWeight: active ? '700' : '500', fontSize: 14.5 }}>{item.title}</Text>
@@ -108,10 +109,10 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, sections
 
   if (wide) {
     return (
-      <View style={{ width: 248, backgroundColor: t.nav, borderRightWidth: 1, borderRightColor: t.border, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 14 }}>
+      <View style={[{ width: 248, backgroundColor: t.nav, borderRightWidth: 1, borderRightColor: t.border, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 14 }, glass(t, 24)]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18, marginBottom: 14 }}>
-          <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="cube" size={18} color="#fff" />
+          <View style={{ width: 36, height: 36, borderRadius: 11, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: t.yellow }}>
+            <Ionicons name="cube" size={18} color={t.yellow} />
           </View>
           <View>
             <Text style={{ color: t.text, fontWeight: '800', fontSize: 17 }}>WH Reg</Text>
@@ -138,7 +139,7 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, sections
   const moreBadge = all.filter((i) => !primary.includes(i.name)).some((i) => badgeOf(i.name));
   return (
     <>
-      <View style={{ flexDirection: 'row', backgroundColor: t.nav, borderTopWidth: 1, borderTopColor: t.border, paddingBottom: insets.bottom, paddingTop: 4 }}>
+      <View style={[{ flexDirection: 'row', backgroundColor: t.nav, borderTopWidth: 1, borderTopColor: t.border, paddingBottom: insets.bottom, paddingTop: 4 }, glass(t, 24)]}>
         {[...prim, { name: '__more', title: 'More', icon: 'grid' as IconName, hint: '' }].map((it) => {
           const active = it.name === '__more' ? inMore : current === it.name;
           const b = it.name === '__more' ? (moreBadge ? '•' : undefined) : badgeOf(it.name);
@@ -159,7 +160,7 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, sections
       </View>
       <Modal visible={more} transparent animationType="slide" onRequestClose={() => setMore(false)}>
         <Pressable style={{ flex: 1, backgroundColor: t.overlay }} onPress={() => setMore(false)} />
-        <View style={{ backgroundColor: t.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 10, paddingBottom: insets.bottom + 14, maxHeight: '85%' }}>
+        <View style={[{ backgroundColor: t.dark ? 'rgba(30,12,14,0.86)' : 'rgba(255,255,255,0.86)', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 10, paddingBottom: insets.bottom + 14, maxHeight: '85%' }, glass(t, 28)]}>
           <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: t.border, marginBottom: 8 }} />
           <ScrollView contentContainerStyle={{ paddingHorizontal: 14, gap: 2 }}>
             {sections.map((sec) => (
@@ -185,7 +186,11 @@ export function AppHeader({ route, options, sections, right }: HeaderProps & { s
   const insets = useSafeAreaInsets();
   const item = sections.flatMap((s) => s.items).find((i) => i.name === route.name);
   return (
-    <View style={{ backgroundColor: t.bg, paddingTop: insets.top + (wide ? 18 : 8), paddingBottom: 6, borderBottomWidth: wide ? 0 : 1, borderBottomColor: t.border }}>
+    <View style={pageBgFixed(t)}>
+    <View style={[{ backgroundColor: wide ? 'transparent' : t.nav, paddingTop: insets.top + (wide ? 18 : 8), paddingBottom: 6, borderBottomWidth: wide ? 0 : 1, borderBottomColor: t.border }]}>
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, flexDirection: 'row' }}>
+        <View style={{ flex: 3, backgroundColor: t.accent }} /><View style={{ flex: 1, backgroundColor: t.yellow }} />
+      </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, width: '100%', maxWidth: 1100, alignSelf: 'center' }}>
         {!wide && item ? (
           <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
@@ -199,6 +204,7 @@ export function AppHeader({ route, options, sections, right }: HeaderProps & { s
         {right}
         <ThemeToggleButton />
       </View>
+    </View>
     </View>
   );
 }

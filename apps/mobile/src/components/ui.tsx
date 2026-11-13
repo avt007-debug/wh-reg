@@ -6,8 +6,21 @@ import { useTheme, useThemeMode, type Theme, type ThemeMode } from '../theme';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 
+/** Frosted-glass look on the web: blur what is behind the panel + soft shadow + light top edge. */
+export const glass = (t: Theme, blur = 18): ViewStyle => (t.glass
+  ? ({ backdropFilter: `blur(${blur}px) saturate(170%)`, WebkitBackdropFilter: `blur(${blur}px) saturate(170%)` } as unknown as ViewStyle)
+  : {});
+/** Opaque page background with the fixed glow (so screens stacked underneath never show through). */
+export const pageBgFixed = (t: Theme): ViewStyle => (t.glass
+  ? ({ backgroundColor: t.bg, backgroundImage: t.bgImage, backgroundAttachment: 'fixed', backgroundSize: 'cover' } as unknown as ViewStyle)
+  : { backgroundColor: t.bg });
+/** Page background for full-screen sheets: the red/yellow glow on the web, solid colour on phones. */
+export const pageBg = (t: Theme): ViewStyle => (t.glass
+  ? ({ backgroundColor: t.surface, backgroundImage: t.bgImage } as unknown as ViewStyle)
+  : { backgroundColor: t.surface });
+
 const shadow = (t: Theme): ViewStyle => Platform.OS === 'web'
-  ? ({ boxShadow: `0 1px 2px ${t.shadow}, 0 4px 14px ${t.shadow}` } as ViewStyle)
+  ? ({ boxShadow: `0 1px 0 ${t.dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.9)'} inset, 0 8px 28px ${t.shadow}, 0 1px 3px ${t.shadow}`, ...glass(t) } as ViewStyle)
   : { shadowColor: '#000', shadowOpacity: t.dark ? 0.35 : 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 };
 
 export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
@@ -15,8 +28,8 @@ export function Screen({ children, scroll = true }: { children: ReactNode; scrol
   // Centered column on wide (desktop browser) screens; full width on phones.
   const body = <View style={{ padding: 16, paddingBottom: 32, gap: 14, width: '100%', maxWidth: 1100, alignSelf: 'center' }}>{children}</View>;
   return scroll
-    ? <ScrollView style={{ flex: 1, backgroundColor: t.bg }} keyboardShouldPersistTaps="handled">{body}</ScrollView>
-    : <View style={{ flex: 1, backgroundColor: t.bg }}>{body}</View>;
+    ? <ScrollView style={{ flex: 1, backgroundColor: t.screenBg }} keyboardShouldPersistTaps="handled">{body}</ScrollView>
+    : <View style={{ flex: 1, backgroundColor: t.screenBg }}>{body}</View>;
 }
 
 /** Rounded panel. Optional icon, title, one-line description and something on the right (e.g. a button). */
@@ -114,7 +127,7 @@ export function Field({ label, error, ...props }: TextInputProps & { label: stri
       <TextInput
         placeholderTextColor={t.textMuted}
         {...props}
-        style={[s.input, { color: t.text, borderColor: error ? t.danger : t.border, backgroundColor: t.cardAlt }, props.style]}
+        style={[s.input, { color: t.text, borderColor: error ? t.danger : t.hairline, backgroundColor: t.cardAlt }, props.style]}
       />
       {error ? <Text style={{ color: t.danger, fontSize: 12 }}>{error}</Text> : null}
     </View>
@@ -131,7 +144,8 @@ export function Button({ title, onPress, kind = 'primary', busy, disabled, icon 
     <Pressable
       onPress={onPress}
       disabled={disabled || busy}
-      style={({ pressed }) => [s.btn, { backgroundColor: bg, borderColor: kind === 'secondary' ? t.border : bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 }]}
+      style={({ pressed }) => [s.btn, kind === 'secondary' ? glass(t, 12) : null, { backgroundColor: bg, borderColor: kind === 'secondary' ? t.hairline : bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
+        kind === 'primary' && t.glass ? ({ boxShadow: `0 6px 18px ${t.accentSoft}, 0 0 0 1px rgba(255,255,255,0.15) inset` } as ViewStyle) : null]}
     >
       {busy ? <ActivityIndicator color={fg} /> : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -158,7 +172,7 @@ export function SmallButton({ title, onPress, icon, kind = 'secondary', disabled
   const auto: IconName | null = ion ?? (/excel|export/i.test(title) ? 'download-outline' : /^edit/i.test(title) ? 'create-outline' : /^(add|new)\b/i.test(title) ? 'add' : null);
   return (
     <Pressable onPress={onPress} disabled={disabled}
-      style={({ pressed }) => [s.small, { backgroundColor: bg, borderColor: kind === 'secondary' ? t.border : bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 }]}>
+      style={({ pressed }) => [s.small, kind === 'secondary' ? glass(t, 10) : null, { backgroundColor: bg, borderColor: kind === 'secondary' ? t.hairline : bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         {auto ? <Ionicons name={auto} size={16} color={fg} /> : icon && !ion ? <Text style={{ color: fg }}>{icon}</Text> : null}
         <Text style={{ color: fg, fontWeight: '600' }}>{title}</Text>
@@ -181,7 +195,7 @@ export function Chips<T extends string | number>({ options, value, onChange, for
         const on = o === value;
         return (
           <Pressable key={String(o)} onPress={() => onChange(o)}
-            style={[s.chip, { borderColor: on ? t.accent : t.border, backgroundColor: on ? t.accentSoft : t.card }]}>
+            style={[s.chip, glass(t, 10), { borderColor: on ? t.accent : t.hairline, backgroundColor: on ? t.accentSoft : t.card }]}>
             <Text style={{ color: on ? t.accent : t.text, fontWeight: on ? '700' : '500' }}>{format ? format(o) : String(o)}</Text>
           </Pressable>
         );
@@ -249,7 +263,7 @@ export function ThemeSwitch({ compact }: { compact?: boolean }) {
         const on = mode === o.m;
         return (
           <Pressable key={o.m} onPress={() => setMode(o.m)} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={`${o.label} mode`}
-            style={{ flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingVertical: 7, paddingHorizontal: compact ? 8 : 10, borderRadius: 8, backgroundColor: on ? t.card : 'transparent' }}>
+            style={{ flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingVertical: 7, paddingHorizontal: compact ? 8 : 10, borderRadius: 8, backgroundColor: on ? (t.dark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent' }}>
             <Ionicons name={o.icon} size={15} color={on ? t.accent : t.textMuted} />
             {compact ? null : <Text style={{ color: on ? t.text : t.textMuted, fontSize: 13, fontWeight: on ? '700' : '500' }}>{o.label}</Text>}
           </Pressable>

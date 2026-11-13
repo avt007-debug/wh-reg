@@ -5,7 +5,7 @@ import { q } from '../api/client';
 import { askText, confirmAsk, notify } from '../lib/dialogs';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme';
-import { Card, Label, Row, SmallButton } from './ui';
+import { Card, Label, Row, SmallButton, pageBg } from './ui';
 
 interface Brand { id: string; name: string; is_active: boolean }
 
@@ -45,7 +45,7 @@ export function CompanyEditor({ visible, onClose }: { visible: boolean; onClose:
   const hidden = (all.data ?? []).filter((b) => !b.is_active);
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <ScrollView style={{ flex: 1, backgroundColor: t.surface }}
+      <ScrollView style={[{ flex: 1 }, pageBg(t)]}
         contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 640, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ flex: 1, color: t.text, fontSize: 20, fontWeight: '700' }}>Companies</Text>

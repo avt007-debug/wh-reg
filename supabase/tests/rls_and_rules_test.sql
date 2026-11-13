@@ -677,6 +677,17 @@ INSERT INTO product_aliases(product_id, alias) SELECT id, 'OLDTAK2' FROM product
 :AS_EMPA
 SELECT t.ok(public.find_material('oldtak2')->0->>'sku_code' = 'TAK002', 'old code (alias) finds the item');
 
+\echo '── Employees see stock in every warehouse'
+:AS_EMPA
+SELECT public.stock_all_warehouses() AS sa \gset
+SELECT t.ok(jsonb_array_length(:'sa'::jsonb->'warehouses') >= 2 AND (:'sa'::jsonb->>'my_warehouse_id')::uuid = :WHA, 'lists all warehouses and marks my own');
+SELECT t.ok((SELECT (x->'by_warehouse'->>(:WHB)::text)::numeric FROM jsonb_array_elements(:'sa'::jsonb->'items') x WHERE x->>'sku_code' = 'TAK002') = 40,
+            'employee of WHA sees TAK002 stock in WHB');
+SELECT t.ok(NOT (:'sa'::text ~ 'cost|value|price'), 'no cost, value or price in the employee stock list');
+SELECT t.ok(jsonb_array_length(public.stock_all_warehouses('oldtak2')->'items') = 1, 'search works with old codes too');
+:AS_ANON
+SELECT t.throws($$SELECT public.stock_all_warehouses()$$, '42501', 'anonymous cannot see stock');
+
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

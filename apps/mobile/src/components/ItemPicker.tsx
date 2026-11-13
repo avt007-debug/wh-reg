@@ -16,7 +16,7 @@ import { productImageUrl } from '../lib/supabase';
 import { toUoms, type ProductHit } from '../api/types';
 import { askText } from '../lib/dialogs';
 import { useTheme } from '../theme';
-import { Button, Chips, Label } from './ui';
+import { Button, Chips, Label, pageBg } from './ui';
 
 interface Category { id: string; parent_id: string | null; name: string; path: string }
 
@@ -56,7 +56,7 @@ export function ItemPicker({ visible, onClose, onPick }: { visible: boolean; onC
   const brands = tree.data?.brands ?? [];
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: t.surface, padding: 16, gap: 10, paddingTop: 48 }}>
+      <View style={[{ flex: 1, padding: 16, gap: 10, paddingTop: 48 }, pageBg(t)]}>
         <TextInput
           autoFocus value={q} onChangeText={setQ} placeholder="Search item, brand, size or local name…"
           placeholderTextColor={t.textMuted} autoCorrect={false}

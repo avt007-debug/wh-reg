@@ -13,7 +13,7 @@ import type { ProductHit } from '../api/types';
 import { notify } from '../lib/dialogs';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme';
-import { Button, Card, Chips, Field, Label, Notice, SmallButton } from './ui';
+import { Button, Card, Chips, Field, Label, Notice, SmallButton, pageBg } from './ui';
 
 const UNITS = ['PCS', 'SET', 'PAIR', 'MTR', 'KG', 'LTR', 'ROLL', 'BOX'] as const;
 const NEW = '__new';
@@ -89,7 +89,7 @@ export function NewItemSheet({ visible, initialCode, onClose, onCreated, forPurc
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <ScrollView style={{ flex: 1, backgroundColor: t.bg }} keyboardShouldPersistTaps="handled"
+      <ScrollView style={[{ flex: 1 }, pageBg(t)]} keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ flex: 1 }}>
