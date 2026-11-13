@@ -3,11 +3,11 @@
  * market runs per place, customers approached, and a 6-month performance trend.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
-import { Card, Chips, Empty, HBar, Label, Progress, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
+import { Button, Card, Chips, Empty, Field, HBar, Label, Progress, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
 import { dateTimeIST, dmy, hoursLabel, monthLabel, monthLong, monthStart, timeIST } from '../../src/lib/dates';
 import { askText, notify } from '../../src/lib/dialogs';
 import { exportXlsx } from '../../src/lib/exportFile';
@@ -111,15 +111,7 @@ function SalesTargets({ month }: { month: string }) {
     rpc('owner_set_sales_target', { p_user: r.user_id, p_month: month, p_target: amount, p_note: note })
       .then(() => { for (const k of ['sales-targets', 'employees-month']) void qc.invalidateQueries({ queryKey: [k] }); },
         (e) => notify('Not saved', e instanceof Error ? e.message : String(e)));
-  const edit = async (r: TargetRow) => {
-    const a = await askText(`Sales target for ${r.full_name}`, `${monthLong(month)} — amount in ₹ before GST${r.target ? ` (now ${formatINR(n(r.target))})` : ''}. Enter 0 to remove.`);
-    if (a == null) return;
-    const amount = Number(a.replace(/[₹,\s]/g, ''));
-    if (!Number.isFinite(amount) || amount < 0) return notify('Enter an amount like 150000');
-    if (amount === 0) return void save(r, null, null);
-    const note = await askText('Note for the employee (optional)', 'e.g. Focus on new dealers in Tirupati');
-    void save(r, amount, note ?? r.note);
-  };
+  const [editing, setEditing] = useState<TargetRow | null>(null);
   const totalTarget = rows.reduce((a, r) => a + n(r.target), 0);
   const totalAch = rows.filter((r) => r.target != null).reduce((a, r) => a + n(r.achieved), 0);
   return (
@@ -142,7 +134,7 @@ function SalesTargets({ month }: { month: string }) {
               {r.target == null && r.last_month_target ? (
                 <SmallButton title={`Same as last month (${formatINR(n(r.last_month_target))})`} onPress={() => void save(r, n(r.last_month_target), null)} />
               ) : null}
-              <SmallButton title={r.target != null ? 'Edit' : 'Set target'} icon={r.target != null ? 'create-outline' : 'flag-outline'} kind={r.target != null ? 'secondary' : 'primary'} onPress={() => void edit(r)} />
+              <SmallButton title={r.target != null ? 'Edit' : 'Set target'} icon={r.target != null ? 'create-outline' : 'flag-outline'} kind={r.target != null ? 'secondary' : 'primary'} onPress={() => setEditing(r)} />
             </View>
             {r.target != null ? <Progress value={n(r.achieved)} max={n(r.target)} height={8} /> : null}
             {r.note ? <Text style={{ color: t.textSecondary, fontSize: 12.5 }}>Note: {r.note}</Text> : null}
@@ -150,7 +142,43 @@ function SalesTargets({ month }: { month: string }) {
         );
       })}
       {!rows.length ? <Empty icon="people-outline" text={q.isLoading ? 'Loading…' : 'No employees yet — add them in Settings.'} /> : null}
+      <TargetSheet row={editing} month={month} onClose={() => setEditing(null)} onSave={save} />
     </Card>
+  );
+}
+
+/** One small form: target amount + optional note, Save / Remove target. */
+function TargetSheet({ row, month, onClose, onSave }: {
+  row: TargetRow | null; month: string; onClose: () => void; onSave: (r: TargetRow, amount: number | null, note: string | null) => Promise<unknown>;
+}) {
+  const t = useTheme();
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (row) { setAmount(row.target != null ? String(n(row.target)) : row.last_month_target != null ? String(n(row.last_month_target)) : ''); setNote(row.note ?? ''); }
+  }, [row]);
+  if (!row) return null;
+  const value = Number(amount.replace(/[₹,\s]/g, ''));
+  const ok = amount.trim() !== '' && Number.isFinite(value) && value > 0;
+  const go = async (a: number | null) => { setBusy(true); await onSave(row, a, a == null ? null : note.trim() || null); setBusy(false); onClose(); };
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: t.overlay, justifyContent: 'center', padding: 20 }}>
+        <View style={{ backgroundColor: t.card, borderRadius: 16, padding: 18, gap: 12, width: '100%', maxWidth: 460, alignSelf: 'center', borderWidth: 1, borderColor: t.border }}>
+          <Text style={{ color: t.text, fontSize: 18, fontWeight: '800' }}>Sales target · {row.full_name}</Text>
+          <Label muted>{monthLong(month)} · sales so far {formatINR(n(row.achieved))} (before GST)</Label>
+          <Field label="Target amount ₹ (before GST)" value={amount} onChangeText={setAmount} keyboardType="number-pad" autoFocus
+            placeholder="e.g. 300000" error={amount.trim() && !ok ? 'Enter an amount like 300000' : undefined}
+            onSubmitEditing={() => { if (ok) void go(value); }} />
+          {ok ? <Label muted>= {formatINR(value)}</Label> : null}
+          <Field label="Note for the employee (optional)" value={note} onChangeText={setNote} placeholder="e.g. Focus on new dealers in Tirupati" />
+          <Button title="Save target" icon="checkmark" onPress={() => void go(value)} disabled={!ok} busy={busy} />
+          {row.target != null ? <Button title="Remove target" kind="danger" onPress={() => void go(null)} disabled={busy} /> : null}
+          <Button title="Cancel" kind="secondary" onPress={onClose} disabled={busy} />
+        </View>
+      </View>
+    </Modal>
   );
 }
 
