@@ -44,6 +44,9 @@ jobs:
         env:
           EXPO_BASE_URL: /${{ github.event.repository.name }}
         run: npx expo export --platform web
+      - name: Make it installable on phones (icon, full screen)
+        working-directory: apps/mobile
+        run: node scripts/pwa-head.mjs dist /${{ github.event.repository.name }}
       - name: SPA fallback (deep links like /dashboard)
         run: cp apps/mobile/dist/index.html apps/mobile/dist/404.html
       - uses: actions/upload-pages-artifact@v3
