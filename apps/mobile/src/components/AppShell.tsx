@@ -135,18 +135,19 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, sections
     );
   }
 
-  // Phones: EVERY page is on the bottom bar (swipe it sideways), primary pages first, then "Menu"
-  // (all pages with descriptions, your name, Day/Night, Log out). Nothing is hidden any more.
+  // Phones: every page is on the bottom bar (swipe it sideways), primary pages first. "Menu" is pinned on the
+  // right and lists all pages with descriptions, your name, Day/Night, Log out.
   const ordered = [...primary.map((n) => all.find((i) => i.name === n)!).filter(Boolean), ...all.filter((i) => !primary.includes(i.name))];
   return (
     <>
       <View style={[{ backgroundColor: t.nav, borderTopWidth: 1, borderTopColor: t.border, paddingBottom: insets.bottom, paddingTop: 4 }, glass(t, 24)]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
-        {[...ordered, { name: '__more', title: 'Menu', icon: 'menu' as IconName, hint: '' }].map((it) => {
-          const active = it.name !== '__more' && current === it.name;
-          const b = it.name === '__more' ? undefined : badgeOf(it.name);
+        <View style={{ flexDirection: 'row' }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+        {ordered.map((it) => {
+          const active = current === it.name;
+          const b = badgeOf(it.name);
           return (
-            <Pressable key={it.name} onPress={() => (it.name === '__more' ? setMore(true) : go(it.name))}
+            <Pressable key={it.name} onPress={() => go(it.name)}
               accessibilityRole="tab" accessibilityState={{ selected: active }} accessibilityLabel={it.title}
               style={{ width: 74, flexGrow: 1, alignItems: 'center', paddingVertical: 6, gap: 2 }}>
               <View>
@@ -160,6 +161,15 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, sections
           );
         })}
         </ScrollView>
+        {/* "Menu" is pinned so it is always on screen, however many pages there are */}
+        <Pressable onPress={() => setMore(true)} accessibilityRole="button" accessibilityLabel="Menu"
+          style={{ width: 70, alignItems: 'center', paddingVertical: 6, gap: 2, borderLeftWidth: 1, borderLeftColor: t.border }}>
+          <View style={{ paddingHorizontal: 14, paddingVertical: 3, borderRadius: 999, backgroundColor: t.accentSoft }}>
+            <Ionicons name="menu" size={22} color={t.accent} />
+          </View>
+          <Text style={{ color: t.accent, fontSize: 11, fontWeight: '700' }}>Menu</Text>
+        </Pressable>
+        </View>
       </View>
       <Modal visible={more} transparent animationType="slide" onRequestClose={() => setMore(false)}>
         <Pressable style={{ flex: 1, backgroundColor: t.overlay }} onPress={() => setMore(false)} />
