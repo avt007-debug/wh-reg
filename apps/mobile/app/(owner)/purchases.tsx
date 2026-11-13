@@ -21,6 +21,7 @@ import { CreditNotes } from '../../src/components/CreditNotes';
 import { GstSplitRows, GstTag } from '../../src/components/GstSplit';
 import { ItemPicker } from '../../src/components/ItemPicker';
 import { PriceGstField } from '../../src/components/PriceGstField';
+import { ReturnSheet } from '../../src/components/ReturnSheet';
 import { Button, Card, Chips, Field, Label, Row, Screen, SmallButton, Toolbar, pageBg } from '../../src/components/ui';
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
 import { dateTimeIST, dmy, monthLong, monthStart } from '../../src/lib/dates';
@@ -57,6 +58,7 @@ export default function OwnerPurchases() {
   const [back, setBack] = useState(0);              // 0 = this month, 1 = last month …
   const [search, setSearch] = useState('');
   const [edit, setEdit] = useState<Purchase | null>(null);
+  const [returning, setReturning] = useState<Purchase | null>(null);
   const [view, setView] = useState<'Bills' | 'Credit notes'>('Bills');
   const [adding, setAdding] = useState(false);
   const month = monthStart(back);
@@ -175,7 +177,8 @@ export default function OwnerPurchases() {
           <SmallButton icon="⬇" title="Export month to Excel" onPress={doExport} disabled={!rows.length} />
         </Toolbar>
 
-        {rows.map((p) => <InvoiceCard key={p.id} p={p} onEdit={() => setEdit(p)} />)}
+        {rows.map((p) => <InvoiceCard key={p.id} p={p} onEdit={() => setEdit(p)}
+          actions={p.status === 'POSTED' ? <SmallButton icon="return-down-back-outline" title="Goods returned" onPress={() => setReturning(p)} /> : undefined} />)}
         {!rows.length ? <Label muted>{list.isLoading ? 'Loading…' : `No purchases in ${monthLong(month)}`}</Label> : null}
         </>
       )}
@@ -191,6 +194,8 @@ export default function OwnerPurchases() {
         </ScrollView>
       </Modal>
       <PurchaseEditor purchase={edit} onClose={() => setEdit(null)} />
+      <ReturnSheet kind="purchase" docId={returning?.id ?? null} title={returning ? `${returning.vendor_name} · invoice ${returning.vendor_invoice_no}` : ''}
+        onClose={() => setReturning(null)} />
     </Screen>
   );
 }

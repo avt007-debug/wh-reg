@@ -10,6 +10,11 @@ import { formatINR, splitByGst } from '@wh/shared';
 import { rpc } from '../../src/api/client';
 import { GstSplitRows, GstTag } from '../../src/components/GstSplit';
 import { BillForm } from '../../src/components/BillForm';
+import { DeliveryProofView } from '../../src/components/DeliveryProof';
+import { InvoiceActions } from '../../src/components/InvoiceActions';
+import { ReturnSheet } from '../../src/components/ReturnSheet';
+import { useAuth } from '../../src/auth/store';
+import type { InvBill } from '../../src/lib/invoice';
 import { Card, Field, Label, Row, Screen, SmallButton, Stat, Toolbar, pageBg } from '../../src/components/ui';
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
 import { dateTimeIST, dmy, monthLong, monthStart } from '../../src/lib/dates';
@@ -18,19 +23,7 @@ import { exportXlsx } from '../../src/lib/exportFile';
 import { fileStamp, useOwnerWarehouse } from '../../src/lib/warehouse';
 import { useTheme } from '../../src/theme';
 
-interface SaleLine {
-  id: string; line_no: number; sku_code: string; name: string; hsn_code: string | null; uom: string; qty: number; mrp: number | null;
-  unit_base_price: number; discount_pct: number; discount_amount: number; line_discount: number; line_taxable: number;
-  gst_rate: number; line_tax: number; line_total: number;
-}
-interface Sale {
-  id: string; invoice_no: string; invoice_date: string; warehouse_id: string; warehouse_name: string;
-  customer_name: string; customer_gstin: string | null; customer_phone: string | null; is_interstate: boolean;
-  taxable_total: number; discount_total: number; cgst_total: number; sgst_total: number; igst_total: number; grand_total: number;
-  status: 'POSTED' | 'CANCELLED'; cancelled_reason: string | null; used_override: boolean;
-  loading_charges: number; transport_charges: number; other_charges: number;
-  entered_by: string; entered_by_role: string; entered_at: string; lines: SaleLine[];
-}
+type Sale = InvBill & { used_override: boolean; entered_by_role: string };
 const n = (x: unknown) => Number(x ?? 0);
 
 export default function Sales() {
@@ -41,6 +34,10 @@ export default function Sales() {
   const [back, setBack] = useState(0);
   const [search, setSearch] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Sale | null>(null);
+  const [returning, setReturning] = useState<Sale | null>(null);
+  const fullOwner = useAuth((s) => s.user?.role) === 'OWNER';
+  const delivered = useQuery({ queryKey: ['delivered', month], queryFn: () => rpc<Record<string, string>>('owner_delivered_ids', { p_month: month }) });
   const month = monthStart(back);
   const list = useQuery({ queryKey: ['sales-month', month, wh], queryFn: () => rpc<Sale[]>('owner_sales_month', { p_month: month, p_warehouse: wh }) });
 
@@ -152,8 +149,16 @@ export default function Sales() {
                 <Text style={{ color: t.textSecondary, fontSize: 12 }}>Entered by {s.entered_by} · {dateTimeIST(s.entered_at)}</Text>
                 {off && s.cancelled_reason ? <Text style={{ color: t.danger, fontSize: 12 }}>{s.cancelled_reason}</Text> : null}
               </View>
-              {!off ? <SmallButton title="Cancel bill" onPress={() => void cancel(s)} /> : null}
             </View>
+            {!off ? (
+              <Toolbar>
+                {fullOwner ? <SmallButton title="Edit bill" onPress={() => setEditing(s)} /> : null}
+                <SmallButton icon="return-down-back-outline" title="Goods returned" onPress={() => setReturning(s)} />
+                {fullOwner ? <SmallButton icon="close-circle-outline" title="Cancel bill" kind="danger" onPress={() => void cancel(s)} /> : null}
+              </Toolbar>
+            ) : null}
+            <InvoiceActions dispatchId={s.id} gst={!off && !!s.customer_gstin} />
+            {delivered.data?.[s.id] ? <DeliveryProofView dispatchId={s.id} summary={delivered.data[s.id]!} /> : null}
             {s.lines.map((l) => (
               <View key={l.id} style={{ flexDirection: 'row', gap: 8, paddingVertical: 6, borderBottomWidth: 0.5, borderColor: t.border, opacity: off ? 0.55 : 1 }}>
                 <View style={{ flex: 1, gap: 2 }}>
@@ -190,6 +195,18 @@ export default function Sales() {
           <BillForm kind="sale" owner onSaved={() => setAdding(false)} />
         </ScrollView>
       </Modal>
+      <Modal visible={!!editing} animationType="slide" onRequestClose={() => setEditing(null)}>
+        <ScrollView style={[{ flex: 1 }, pageBg(t)]} keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ flex: 1, color: t.text, fontSize: 20, fontWeight: '700' }}>Edit bill {editing?.invoice_no}</Text>
+            <SmallButton title="Close" onPress={() => setEditing(null)} />
+          </View>
+          {editing ? <BillForm key={editing.id} kind="sale" owner editOf={editing} onSaved={() => setEditing(null)} /> : null}
+        </ScrollView>
+      </Modal>
+      <ReturnSheet kind="sale" docId={returning?.id ?? null} title={returning ? `${returning.customer_name} · invoice ${returning.invoice_no}` : ''}
+        onClose={() => setReturning(null)} />
     </Screen>
   );
 }

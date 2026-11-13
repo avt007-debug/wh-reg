@@ -42,7 +42,8 @@ Deno.serve(async (req) => {
   const { data: auth, error: authErr } = await db.auth.getUser(token);
   if (authErr || !auth.user) return json({ error: 'not signed in' }, 401);
   const { data: caller } = await db.from('users').select('role, is_active').eq('id', auth.user.id).maybeSingle();
-  if (!caller?.is_active || !['OWNER', 'ADMIN'].includes(caller.role)) return json({ error: 'owner/admin only' }, 403);
+  // Managers (ADMIN) run the business day to day but cannot create logins or see / change passwords.
+  if (!caller?.is_active || caller.role !== 'OWNER') return json({ error: 'Only the owner can manage staff logins' }, 403);
 
   const b = await req.json().catch(() => ({}));
   // At least 8 characters — easy enough to type on a phone; the login locks after repeated wrong tries.

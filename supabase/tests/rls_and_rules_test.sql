@@ -794,6 +794,227 @@ SELECT t.throws($$SELECT public.owner_new_recovery_codes()$$, 'WH002', 'employee
 SELECT t.throws($$SELECT public.owner_login_activity()$$, 'WH002', 'employees cannot see login history');
 
 -- =============================================================================
+\echo '── Owner add-ins: returns, bill edit, suppliers, customers, money, GST, counts, items'
+-- =============================================================================
+RESET ROLE;
+CREATE FUNCTION t.bal(uuid) RETURNS numeric LANGUAGE sql SECURITY DEFINER AS $$ SELECT coalesce((SELECT balance FROM fin.customer_balances() WHERE customer_id = $1), 0) $$;
+CREATE FUNCTION t.note_payment(uuid) RETURNS uuid LANGUAGE sql SECURITY DEFINER AS $$ SELECT payment_id FROM sales_returns WHERE id = $1 $$;
+GRANT EXECUTE ON FUNCTION t.bal(uuid), t.note_payment(uuid) TO PUBLIC;
+:AS_OWNER
+SELECT public.owner_save_business('{"name":"Vinayaka Agencies","address":"Main Rd, Chittoor 517001","bank_ifsc":"sbin0001234","opening_cash":"1000"}');
+:AS_EMPA
+SELECT t.ok((public.business_profile())->>'name' = 'Vinayaka Agencies' AND NOT (public.business_profile() ? 'opening_cash'),
+            'employees see the business name for invoices but not the opening cash');
+SELECT t.throws($$SELECT public.owner_save_business('{"name":"x"}')$$, 'WH002', 'employees cannot change the business profile');
+:AS_OWNER
+SELECT t.throws($$SELECT public.owner_save_business('{"bank_ifsc":"BAD"}')$$, 'WH005', 'IFSC is checked');
+
+-- Sales return (credit note) on Venkat Traders' bill CTR-B-101
+SELECT id AS sr_disp, customer_id AS sr_cust, warehouse_id AS sr_wh FROM dispatches WHERE invoice_no = 'CTR-B-101' \gset
+SELECT (x->>'line_id') AS sr_line, (x->>'product_id') AS sr_prod, (x->>'returnable_base')::numeric AS sr_left
+  FROM jsonb_array_elements(public.returnable_lines('sale', :'sr_disp')) x ORDER BY (x->>'line_no')::int LIMIT 1 \gset
+SELECT qty_on_hand AS sr_before FROM inventory_levels WHERE warehouse_id = :'sr_wh' AND product_id = :'sr_prod' \gset
+SELECT t.bal(:'sr_cust') AS sr_bal \gset
+SELECT public.create_sales_return(jsonb_build_object('dispatchId', :'sr_disp', 'reason', 'damaged in transit',
+         'lines', jsonb_build_array(jsonb_build_object('lineId', :'sr_line', 'qtyBase', 1)))) AS sr \gset
+SELECT t.ok((:'sr'::jsonb->>'return_no') LIKE 'CN/WHA/%' AND (:'sr'::jsonb->>'total')::numeric > 0, 'credit note numbered CN/WHA/… with a value');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE warehouse_id = :'sr_wh' AND product_id = :'sr_prod') = :'sr_before'::numeric + 1,
+            'returned goods go back into stock');
+SELECT t.ok(t.bal(:'sr_cust') = :'sr_bal'::numeric - (:'sr'::jsonb->>'total')::numeric,
+            'customer balance goes down by the credit note');
+SELECT t.throws(format($$SELECT public.create_sales_return(jsonb_build_object('dispatchId', %L, 'reason', 'again',
+         'lines', jsonb_build_array(jsonb_build_object('lineId', %L, 'qtyBase', %s))))$$, :'sr_disp', :'sr_line', :'sr_left'),
+         'WH005', 'cannot return more than was sold');
+SELECT t.throws(format($$SELECT public.owner_delete_payment(t.note_payment(%L))$$, :'sr'::jsonb->>'id'),
+         'WH005', 'the credit note cannot be deleted as a payment');
+SELECT t.throws(format($$SELECT public.owner_edit_dispatch(%L, '{"lines":[{"x":1}]}')$$, :'sr_disp'), 'WH005', 'a bill with a return cannot be edited');
+:AS_EMPA
+SELECT t.throws(format($$SELECT public.create_sales_return(jsonb_build_object('dispatchId', %L, 'reason', 'xx', 'lines', '[]'::jsonb))$$, :'sr_disp'),
+         'WH002', 'employees cannot make returns');
+:AS_OWNER
+SELECT public.owner_cancel_sales_return((:'sr'::jsonb->>'id')::uuid, 'entered by mistake');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE warehouse_id = :'sr_wh' AND product_id = :'sr_prod') = :'sr_before'::numeric
+        AND t.bal(:'sr_cust') = :'sr_bal'::numeric,
+            'cancelling the return restores stock and balance');
+
+-- Edit a sales bill: one more of the first item, same bill number
+SELECT invoice_no AS ed_no, grand_total AS ed_total FROM dispatches WHERE id = :'sr_disp' \gset
+SELECT jsonb_agg(jsonb_build_object('productId', di.product_id, 'uomCode', di.uom_code,
+         'qty', di.qty + CASE WHEN di.line_no = 1 THEN 1 ELSE 0 END, 'unitBasePrice', di.unit_base_price,
+         'discountPct', di.discount_pct, 'gstRate', di.gst_rate) ORDER BY di.line_no) AS ed_lines
+  FROM dispatch_items di WHERE di.dispatch_id = :'sr_disp' \gset
+SELECT qty_on_hand AS ed_before FROM inventory_levels WHERE warehouse_id = :'sr_wh' AND product_id = :'sr_prod' \gset
+SELECT public.owner_edit_dispatch(:'sr_disp', jsonb_build_object('lines', :'ed_lines'::jsonb, 'reason', 'customer took one more')) AS ed \gset
+SELECT t.ok((:'ed'::jsonb->'dispatch'->>'invoice_no') = :'ed_no' AND (:'ed'::jsonb->>'revision')::int = 1, 'edited bill keeps its number; revision 1 saved');
+SELECT t.ok((SELECT grand_total FROM dispatches WHERE id = :'sr_disp') > :'ed_total'::numeric, 'bill total recalculated after edit');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE warehouse_id = :'sr_wh' AND product_id = :'sr_prod')
+            = :'ed_before'::numeric - (SELECT factor_to_base FROM product_uoms pu JOIN dispatch_items di ON di.product_id = pu.product_id AND di.uom_code = pu.uom_code
+                                         WHERE di.dispatch_id = :'sr_disp' AND di.line_no = 1),
+            'stock re-posted: only the extra item leaves');
+SELECT t.ok(jsonb_array_length(public.owner_dispatch_revisions(:'sr_disp')) = 1, 'revision history available');
+SELECT t.ok((public.invoice_data(:'sr_disp'))->'seller'->>'code' = 'WHA' AND jsonb_array_length((public.invoice_data(:'sr_disp'))->'bill'->'lines') > 0, 'invoice data has the seller warehouse and the lines');
+
+-- Purchase return (debit note) and supplier balance
+SELECT id AS pr_id, vendor_id AS pr_vendor, warehouse_id AS pr_wh FROM purchases WHERE id = 'c0000000-0000-0000-0000-000000000001' \gset
+SELECT (x->>'line_id') AS pr_line, (x->>'product_id') AS pr_prod FROM jsonb_array_elements(public.returnable_lines('purchase', :'pr_id')) x
+ ORDER BY (x->>'line_no')::int LIMIT 1 \gset
+SELECT (x->>'balance')::numeric AS sup_bal FROM jsonb_array_elements(public.owner_suppliers()) x WHERE x->>'id' = :'pr_vendor' \gset
+SELECT qty_on_hand AS pr_before FROM inventory_levels WHERE warehouse_id = :'pr_wh' AND product_id = :'pr_prod' \gset
+SELECT public.create_purchase_return(jsonb_build_object('purchaseId', :'pr_id', 'reason', 'wrong size',
+         'lines', jsonb_build_array(jsonb_build_object('lineId', :'pr_line', 'qtyBase', 1)))) AS prr \gset
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE warehouse_id = :'pr_wh' AND product_id = :'pr_prod') = :'pr_before'::numeric - 1,
+            'purchase return takes goods out of stock');
+SELECT t.ok((SELECT (x->>'balance')::numeric FROM jsonb_array_elements(public.owner_suppliers()) x WHERE x->>'id' = :'pr_vendor')
+            = :'sup_bal'::numeric - (:'prr'::jsonb->>'total')::numeric, 'debit note lowers what we owe the supplier');
+SELECT public.owner_record_vendor_payment(jsonb_build_object('vendorId', :'pr_vendor', 'amount', 1000, 'mode', 'NEFT', 'reference', 'UTR1'));
+SELECT t.ok((SELECT (x->>'balance')::numeric FROM jsonb_array_elements(public.owner_suppliers()) x WHERE x->>'id' = :'pr_vendor')
+            = :'sup_bal'::numeric - (:'prr'::jsonb->>'total')::numeric - 1000, 'supplier payment lowers the balance');
+SELECT t.ok(jsonb_array_length((public.owner_supplier_statement(:'pr_vendor'))->'entries') >= 3, 'supplier statement lists bills, payment and debit note');
+SELECT t.throws(format($$SELECT public.owner_update_purchase(%L, '{"lines":[]}')$$, :'pr_id'), 'WH005', 'purchase with a return cannot be re-itemised');
+SELECT t.throws($$SELECT public.owner_record_vendor_payment('{"amount":0,"mode":"CASH"}')$$, 'WH005', 'payment must be more than 0');
+
+-- Customers: credit limit, merge
+SELECT public.owner_save_customer(jsonb_build_object('id', :'sr_cust', 'name', 'Venkat Traders', 'gstin', '37AAPFV1234K1ZS', 'creditLimit', 10, 'creditDays', 15));
+SELECT t.ok((SELECT (x->>'over_limit')::boolean AND (x->>'credit_days')::int = 15 FROM jsonb_array_elements(public.owner_customers()) x WHERE x->>'id' = :'sr_cust'),
+            'customer over the credit limit is flagged');
+SELECT (public.owner_save_customer('{"name":"Venkat Traders (old)","phone":"9876501234"}'))->>'id' AS dup_cust \gset
+SELECT t.throws($$SELECT public.owner_save_customer('{"name":"X","gstin":"37AAPFV1234K1ZS"}')$$, 'WH005', 'same GSTIN on two customers is refused');
+SELECT public.owner_merge_customers(:'sr_cust', :'dup_cust');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM customers WHERE id = :'dup_cust') AND (SELECT phone FROM customers WHERE id = :'sr_cust') IS NOT NULL,
+            'duplicate customer merged (phone kept)');
+
+-- Money: expenses, cash book, profit & loss
+SELECT public.owner_add_expense('{"category":"Electricity","amount":500,"mode":"CASH","paidTo":"APSPDCL"}');
+SELECT public.owner_add_expense('{"category":"Rent","amount":2000,"mode":"NEFT"}');
+SELECT t.ok(jsonb_array_length((public.owner_expenses(date_trunc('month', app.today_ist())::date, app.today_ist()))->'by_category') = 2, 'expenses by category');
+SELECT public.owner_cash_book(app.today_ist(), app.today_ist()) AS cb \gset
+SELECT t.ok((:'cb'::jsonb->'out'->>'cash')::numeric >= 500 AND (:'cb'::jsonb->'out'->>'bank')::numeric >= 3000, 'cash book: cash and bank outgoings');
+SELECT public.owner_pnl(date_trunc('month', app.today_ist())::date, app.today_ist()) AS pl \gset
+SELECT t.ok((:'pl'::jsonb->>'expenses')::numeric = 2500 AND (:'pl'::jsonb->>'net_profit')::numeric
+            = (:'pl'::jsonb->>'gross_profit')::numeric + (:'pl'::jsonb->>'charges_billed')::numeric + (:'pl'::jsonb->>'supplier_credits_used')::numeric - 2500,
+            'profit & loss adds up');
+
+-- GST report
+SELECT public.owner_gst_report(app.today_ist()) AS g \gset
+SELECT t.ok(jsonb_array_length(:'g'::jsonb->'b2b') >= 2 AND (:'g'::jsonb->'gstr3b'->'outward'->>'taxable')::numeric > 0
+        AND (:'g'::jsonb->'period'->>'fp') = to_char(app.today_ist(), 'MMYYYY'), 'GST report: B2B invoices and 3B outward supplies');
+SELECT t.ok((SELECT sum((x->>'taxable')::numeric) FROM jsonb_array_elements(:'g'::jsonb->'hsn') x WHERE (x->>'rate')::numeric > 0)
+            = (:'g'::jsonb->'gstr3b'->'outward'->>'taxable')::numeric, 'HSN summary matches 3B taxable value');
+
+-- Bulk price and reorder
+SELECT (public.owner_bulk_price('{"pct":10,"preview":true}'))->>'items' AS bp_n \gset
+SELECT default_selling_price AS bp_old FROM products WHERE sku_code = 'TAP-HM-500' \gset
+SELECT public.owner_bulk_price('{"pct":10,"roundTo":1}');
+SELECT t.ok(:'bp_n'::int > 0 AND (SELECT default_selling_price FROM products WHERE sku_code = 'TAP-HM-500') = round(:'bp_old'::numeric * 1.1), 'bulk price +10% applied and rounded');
+SELECT t.ok(((public.owner_bulk_reorder(jsonb_build_object('warehouseId', :WHA, 'mode', 'FIXED', 'minQty', 5, 'reorderQty', 20)))->>'rules')::int > 0,
+            'bulk reorder levels set');
+
+-- Manager role (ADMIN): day-to-day yes, money/security no
+RESET ROLE; UPDATE users SET role = 'ADMIN', primary_warehouse_id = NULL WHERE id = :EMPB;
+:AS_EMPB
+SELECT t.ok(jsonb_typeof(public.owner_customers()) = 'array', 'manager can see customers');
+SELECT t.throws($$SELECT public.owner_pnl(app.today_ist(), app.today_ist())$$, 'WH002', 'manager cannot see profit & loss');
+SELECT t.throws($$SELECT public.owner_set_sales_target('00000000-0000-0000-0000-000000000010', app.today_ist(), 1, null)$$, 'WH002', 'manager cannot set targets');
+SELECT t.throws(format($$SELECT public.owner_cancel_dispatch(%L, 'x')$$, :'sr_disp'), 'WH002', 'manager cannot cancel bills');
+SELECT t.throws($$SELECT public.owner_save_security_settings('{}')$$, 'WH002', 'manager cannot change security');
+RESET ROLE; UPDATE users SET role = 'EMPLOYEE', primary_warehouse_id = :WHB WHERE id = :EMPB;
+
+-- Stock count: employee counts own warehouse, owner applies
+:AS_EMPA
+SELECT (public.start_stock_count(NULL, 'Monthly count'))->>'id' AS sc \gset
+SELECT t.throws($$SELECT public.start_stock_count('a0000000-0000-0000-0000-000000000002')$$, 'WH002', 'employee cannot count another warehouse');
+SELECT (x->>'product_id') AS sc_prod, greatest((x->>'system_qty')::numeric, 0) AS sc_sys FROM jsonb_array_elements((public.stock_count_sheet(:'sc'))->'items') x LIMIT 1 \gset
+SELECT public.save_count_line(:'sc', :'sc_prod', :'sc_sys'::numeric + 3);
+SELECT t.throws(format($$SELECT public.owner_finish_stock_count(%L, true)$$, :'sc'), 'WH002', 'employee cannot apply a count');
+:AS_OWNER
+SELECT t.ok(((public.owner_finish_stock_count(:'sc', true))->>'changed')::int = 1, 'count applied: one item changed');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE warehouse_id = :WHA AND product_id = :'sc_prod') = :'sc_sys'::numeric + 3, 'stock now equals the count');
+
+-- Items: hide, merge
+SELECT t.throws(format($$SELECT public.owner_set_item_active(%L, false)$$, :'sc_prod'), 'WH005', 'an item with stock cannot be hidden');
+SELECT (public.create_item('{"skuCode":"DUP-HAMMER","name":"Hammer duplicate","gstRate":18,"sellingPrice":10,"baseUom":"PCS"}'))->>'id' AS dup_item \gset
+SELECT public.owner_set_stock(:WHA, :'dup_item', 4, 'OPENING');
+SELECT id AS keep_item FROM products WHERE sku_code = 'TAP-HM-500' \gset
+SELECT qty_on_hand AS keep_qty FROM inventory_levels WHERE warehouse_id = :WHA AND product_id = :'keep_item' \gset
+SELECT public.owner_merge_items(:'keep_item', :'dup_item');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE warehouse_id = :WHA AND product_id = :'keep_item') = coalesce(nullif(:'keep_qty', '')::numeric, 0) + 4
+        AND EXISTS (SELECT 1 FROM product_aliases WHERE product_id = :'keep_item' AND alias = 'DUP-HAMMER'),
+            'merged item: stock added, old code kept as an alias');
+
+-- Transfer cancel, activity log, export
+SELECT (public.create_transfer(jsonb_build_object('clientTxnId', gen_random_uuid(), 'fromWarehouseId', :WHA, 'toWarehouseId', :WHB,
+          'lines', jsonb_build_array(jsonb_build_object('productId', :'keep_item', 'uomCode', 'PCS', 'qty', 1)))))->>'id' AS tn \gset
+SELECT qty_on_hand AS tn_after FROM inventory_levels WHERE warehouse_id = :WHA AND product_id = :'keep_item' \gset
+SELECT public.owner_cancel_transfer(:'tn', 'not needed');
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels WHERE warehouse_id = :WHA AND product_id = :'keep_item') = :'tn_after'::numeric + 1,
+            'cancelled transfer puts the stock back');
+SELECT t.ok(jsonb_array_length(public.owner_activity(50)) = 50, 'activity log lists recent actions');
+SELECT t.ok((public.owner_export_all(app.today_ist() - 60, app.today_ist())) ?& ARRAY['sales', 'sale_items', 'purchases', 'customers', 'suppliers', 'stock', 'expenses'],
+            'export everything has every sheet');
+
+-- =============================================================================
+\echo '── Employee add-ins: customer history, deliveries, visit plans, leave, clock fixes'
+-- =============================================================================
+:AS_EMPA
+SELECT id AS cs_cust FROM customers WHERE gstin = '37AAPFV1234K1ZS' \gset
+SELECT public.customer_snapshot(:'cs_cust') AS cs \gset
+SELECT t.ok((:'cs'::jsonb->>'balance')::numeric > 0 AND jsonb_array_length(:'cs'::jsonb->'items') > 0 AND :'cs'::jsonb->'last_bill'->>'invoice_no' IS NOT NULL,
+            'billing shows the customer balance, last bill and last prices');
+SELECT t.ok((:'cs'::jsonb->>'over_limit')::boolean, 'billing warns when the customer is over the credit limit');
+SELECT t.ok(jsonb_array_length(public.customer_last_order(:'cs_cust', NULL)) > 0
+        AND (public.customer_last_order(:'cs_cust', NULL))->0->'hit'->>'sku_code' IS NOT NULL, 'repeat last order returns ready-to-bill lines');
+SELECT t.ok(jsonb_array_length(public.staff_customers('venkat')) = 1, 'employee customer list with search');
+
+-- delivery proof
+SELECT (x->>'id') AS dl_disp FROM jsonb_array_elements(public.my_recent_bills(7)) x WHERE (x->>'mine')::boolean AND x->>'status' = 'POSTED' AND x->>'warehouse_code' = 'WHA' LIMIT 1 \gset
+SELECT t.throws(format($$SELECT public.mark_delivered(jsonb_build_object('dispatchId', %L, 'receiverName', 'Raju'))$$, :'dl_disp'), 'WH005',
+            'delivery needs a photo or signature');
+SELECT t.throws(format($$SELECT public.mark_delivered(jsonb_build_object('dispatchId', %L, 'receiverName', 'Raju', 'photoPath', 'someone-else/x.jpg'))$$, :'dl_disp'),
+            'WH005', 'photo must be in the employee''s own folder');
+SELECT public.mark_delivered(jsonb_build_object('dispatchId', :'dl_disp', 'receiverName', 'Raju', 'photoPath', '00000000-0000-0000-0000-000000000010/d1.jpg',
+         'lat', 13.2172, 'lng', 79.1003, 'accuracy', 12));
+SELECT t.ok((SELECT (x->>'delivered')::boolean FROM jsonb_array_elements(public.my_recent_bills(7)) x WHERE x->>'id' = :'dl_disp'), 'bill shows as delivered');
+:AS_EMPB
+SELECT t.throws(format($$SELECT public.delivery_info(%L)$$, :'dl_disp'), 'WH002', 'another warehouse''s employee cannot see the delivery proof');
+:AS_OWNER
+SELECT t.ok((public.owner_delivered_ids(app.today_ist())) ? :'dl_disp', 'owner sees which bills were delivered');
+
+-- market run location, visit plan
+:AS_EMPA
+SELECT (public.log_market_run('{"place":"Gandhi Road","visits":[{"customerName":"New Shop"}]}'))->>'id' AS mr \gset
+SELECT public.set_field_location('run', :'mr', 13.2, 79.1, 15, '00000000-0000-0000-0000-000000000010/run.jpg');
+RESET ROLE;
+SELECT t.ok((SELECT lat = 13.2 AND photo_path IS NOT NULL FROM market_runs WHERE id = :'mr'), 'market run location and photo saved');
+:AS_OWNER
+SELECT public.save_visit_plan(jsonb_build_object('userId', :EMPA, 'planDate', app.today_ist() + 1, 'customerId', :'cs_cust', 'purpose', 'collect payment'));
+:AS_EMPA
+SELECT (x->>'id') AS vp FROM jsonb_array_elements(public.my_visit_plan(app.today_ist(), app.today_ist() + 7)) x LIMIT 1 \gset
+SELECT t.ok(:'vp' <> '', 'owner''s visit plan shows up for the employee');
+SELECT t.throws(format($$SELECT public.delete_visit_plan(%L)$$, :'vp'), 'WH005', 'employee cannot delete a plan the owner made');
+SELECT public.set_visit_plan_status(:'vp', 'DONE', 'collected 5000');
+:AS_OWNER
+SELECT t.ok((SELECT x->>'status' FROM jsonb_array_elements(public.owner_visit_plans(app.today_ist(), app.today_ist() + 7)) x WHERE x->>'id' = :'vp') = 'DONE',
+            'owner sees the plan marked done');
+
+-- leave and clock-fix requests
+:AS_EMPA
+SELECT public.request_leave(app.today_ist() + 3, app.today_ist() + 4, 'family function');
+SELECT t.ok(jsonb_array_length((public.my_requests())->'leave') = 2, 'leave request for two days');
+SELECT public.request_clock_fix(jsonb_build_object('date', app.today_ist() - 2, 'clockIn', '09:05', 'clockOut', '18:40', 'reason', 'phone was off'));
+SELECT t.throws($$SELECT public.request_clock_fix('{"date":"2020-01-01","clockIn":"09:00","reason":"old"}')$$, 'WH005', 'only the last month can be corrected');
+SELECT t.throws($$SELECT public.owner_requests()$$, 'WH002', 'employees cannot see everyone''s requests');
+:AS_OWNER
+SELECT t.ok(jsonb_array_length((public.owner_requests())->'leave') = 2 AND jsonb_array_length((public.owner_requests())->'clock') = 1, 'owner sees pending requests');
+SELECT public.owner_decide_leave(ARRAY(SELECT (x->>'id')::uuid FROM jsonb_array_elements((public.owner_requests())->'leave') x), true, 'ok');
+SELECT (x->>'id') AS cf FROM jsonb_array_elements((public.owner_requests())->'clock') x LIMIT 1 \gset
+SELECT public.owner_decide_clock_fix(:'cf', true, NULL);
+RESET ROLE;
+SELECT t.ok((SELECT count(*) FROM leave_days WHERE user_id = :EMPA AND status = 'APPROVED') = 2, 'leave approved');
+SELECT t.ok(EXISTS (SELECT 1 FROM attendance WHERE user_id = :EMPA AND work_date = app.today_ist() - 2 AND clock_out_at IS NOT NULL),
+            'approved correction adds the missed day');
+SELECT t.ok((SELECT count(*) FROM notifications WHERE user_id = :EMPA AND kind IN ('LEAVE_DECISION', 'CLOCK_FIX_DECISION')) = 2, 'employee is told the decisions');
+
+-- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================
 RESET ROLE;

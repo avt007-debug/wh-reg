@@ -106,6 +106,15 @@ function StaffCard({ u, onChanged }: { u: StaffRow; onChanged: () => void }) {
     onSuccess: () => { setEditing(false); onChanged(); notify('Saved', loginId.trim() !== u.login_id ? `${u.full_name} now logs in as "${loginId.trim()}".` : undefined); },
     onError: fail,
   });
+  const setRole = async () => {
+    const toManager = u.role === 'EMPLOYEE';
+    const ok = await confirmAsk(toManager ? `Make ${u.full_name} a manager?` : `Make ${u.full_name} an employee again?`,
+      toManager ? 'Managers see every warehouse and the owner pages (stock, sales, purchases, customers, suppliers, reports) but cannot manage logins, passwords, security, prices, targets, profit & loss, or cancel / edit bills.'
+                : 'They go back to the employee app for their warehouse.', toManager ? 'Make manager' : 'Make employee');
+    if (!ok) return;
+    if (!toManager && !u.warehouse_id && !wh) { notify('Pick a warehouse first', 'Use "Edit name / ID" to choose their warehouse, then try again.'); return; }
+    rpc('owner_update_user', { p_user: u.id, p_role: toManager ? 'ADMIN' : 'EMPLOYEE', p_warehouse: toManager ? null : wh ?? u.warehouse_id }).then(onChanged, fail);
+  };
   const toggle = () => edge('admin-users', { action: 'set_active', userId: u.id, active: !u.is_active }).then(onChanged, fail);
   const remove = async () => {
     if (await confirmAsk(`Remove ${u.full_name}?`, 'They can no longer log in. Their sales, purchases and attendance history are kept. You can restore them later.', 'Remove')) {
@@ -125,12 +134,12 @@ function StaffCard({ u, onChanged }: { u: StaffRow; onChanged: () => void }) {
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{u.full_name}</Text>
           <Text style={{ color: t.textSecondary }}>User ID: <Text style={{ fontWeight: '700', color: t.text }} selectable>{u.login_id}</Text></Text>
           <Text style={{ color: t.textMuted, fontSize: 12 }}>
-            {u.role === 'EMPLOYEE' ? u.warehouse_name ?? '—' : u.role === 'OWNER' ? 'Owner · all warehouses' : 'Admin · all warehouses'}
+            {u.role === 'EMPLOYEE' ? u.warehouse_name ?? '—' : u.role === 'OWNER' ? 'Owner · all warehouses' : 'Manager · all warehouses'}
             {u.phone ? ` · ${u.phone}` : ''} · last login {u.last_sign_in_at ? dateTimeIST(u.last_sign_in_at) : 'never'}
           </Text>
           {!isOwner ? <Text style={{ color: t.textSecondary, fontSize: 12 }}>{shiftText}</Text> : null}
         </View>
-        <Text style={{ color: u.is_active ? t.good : t.danger, fontWeight: '700' }}>{u.is_active ? u.role : 'DISABLED'}</Text>
+        <Text style={{ color: u.is_active ? t.good : t.danger, fontWeight: '700' }}>{u.is_active ? ({ OWNER: 'OWNER', ADMIN: 'MANAGER', EMPLOYEE: 'EMPLOYEE' } as const)[u.role] : 'DISABLED'}</Text>
       </View>
 
       {!isOwner ? (
@@ -164,6 +173,7 @@ function StaffCard({ u, onChanged }: { u: StaffRow; onChanged: () => void }) {
         <Toolbar>
           <SmallButton title="✎ Edit name / ID" onPress={() => setEditing(true)} />
           {!isOwner ? <SmallButton title={reset.isPending ? 'Resetting…' : '🔑 Reset password'} onPress={() => void doReset()} disabled={reset.isPending} /> : null}
+          {!isOwner ? <SmallButton title={u.role === 'ADMIN' ? 'Make employee' : 'Make manager'} onPress={() => void setRole()} /> : null}
           {!isOwner ? <SmallButton title={u.is_active ? 'Disable login' : 'Enable login'} onPress={() => void toggle()} /> : null}
           {!isOwner ? <SmallButton title="Remove" kind="danger" onPress={() => void remove()} /> : null}
         </Toolbar>
@@ -221,7 +231,7 @@ function AddStaff({ onCreated }: { onCreated: () => void }) {
       <Field label="Full name" value={fullName} onChangeText={setFullName} placeholder="e.g. Suresh Kumar" />
       <Field label="User ID (what they type)" value={loginId} onChangeText={setLoginId} autoCapitalize="none" placeholder="e.g. suresh.ctr" />
       <Field label="Mobile (for WhatsApp, optional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" maxLength={14} />
-      <Chips options={['EMPLOYEE', 'ADMIN'] as const} value={role} onChange={setRole} format={(r) => (r === 'EMPLOYEE' ? 'Employee' : 'Admin (sees everything)')} />
+      <Chips options={['EMPLOYEE', 'ADMIN'] as const} value={role} onChange={setRole} format={(r) => (r === 'EMPLOYEE' ? 'Employee' : 'Manager (owner pages, limited)')} />
       {role === 'EMPLOYEE' ? (
         <>
           <Label>Warehouse</Label>
