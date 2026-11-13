@@ -34,7 +34,7 @@ export default function OwnerLayout() {
   const nPending = pending.data?.length ?? 0;
   return (
     <Tabs
-      tabBar={(p) => <AppTabBar {...p} sections={SECTIONS} primary={['dashboard', 'stock', 'sales', 'ledger']} roleLabel="Owner" />}
+      tabBar={(p) => <AppTabBar {...p} sections={SECTIONS} primary={['dashboard', 'purchases', 'sales', 'stock', 'ledger']} roleLabel="Owner" />}
       screenOptions={{
         tabBarPosition: wide ? 'left' : 'bottom',
         header: (p) => <AppHeader {...p} sections={SECTIONS} />,

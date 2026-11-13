@@ -26,7 +26,7 @@ export default function StaffLayout() {
   const wide = useWide();
   return (
     <Tabs
-      tabBar={(p) => <AppTabBar {...p} sections={SECTIONS} primary={['home', 'outward', 'stock', 'payments']} roleLabel="Employee" />}
+      tabBar={(p) => <AppTabBar {...p} sections={SECTIONS} primary={['home', 'outward', 'inward', 'stock', 'payments', 'work', 'log']} roleLabel="Employee" />}
       screenOptions={{
         tabBarPosition: wide ? 'left' : 'bottom',
         header: (p) => <AppHeader {...p} sections={SECTIONS} />,

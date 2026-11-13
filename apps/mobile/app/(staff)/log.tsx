@@ -16,12 +16,12 @@ export default function MyDay() {
   });
   return (
     <Screen>
-      <Card title={`Outward today (${q.data?.dispatches.length ?? 0})`}>
+      <Card title={`Sales today (${q.data?.dispatches.length ?? 0})`}>
         {q.data?.dispatches.map((d) => (
           <Row key={d.id} left={d.invoice_no} sub={`${d.customer_name}${d.used_override ? ' · override' : ''}`} right={formatINR(d.grand_total)} />
         ))}
       </Card>
-      <Card title={`Inward today (${q.data?.purchases.length ?? 0})`}>
+      <Card title={`Purchases today (${q.data?.purchases.length ?? 0})`}>
         {q.data?.purchases.map((p) => <Row key={p.id} left={p.vendor_name} right={formatINR(p.grand_total)}
           sub={`${p.vendor_invoice_no} · ${p.status === 'PENDING' ? '⏳ waiting for owner approval' : p.status === 'POSTED' ? '✓ approved, added to stock' : '✕ rejected'}`} />)}
       </Card>

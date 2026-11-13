@@ -134,29 +134,31 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, sections
     );
   }
 
-  const prim = primary.map((n) => all.find((i) => i.name === n)!).filter(Boolean);
-  const inMore = !primary.includes(current ?? '');
-  const moreBadge = all.filter((i) => !primary.includes(i.name)).some((i) => badgeOf(i.name));
+  // Phones: EVERY page is on the bottom bar (swipe it sideways), primary pages first, then "Menu"
+  // (all pages with descriptions, your name, Day/Night, Log out). Nothing is hidden any more.
+  const ordered = [...primary.map((n) => all.find((i) => i.name === n)!).filter(Boolean), ...all.filter((i) => !primary.includes(i.name))];
   return (
     <>
-      <View style={[{ flexDirection: 'row', backgroundColor: t.nav, borderTopWidth: 1, borderTopColor: t.border, paddingBottom: insets.bottom, paddingTop: 4 }, glass(t, 24)]}>
-        {[...prim, { name: '__more', title: 'More', icon: 'grid' as IconName, hint: '' }].map((it) => {
-          const active = it.name === '__more' ? inMore : current === it.name;
-          const b = it.name === '__more' ? (moreBadge ? '•' : undefined) : badgeOf(it.name);
+      <View style={[{ backgroundColor: t.nav, borderTopWidth: 1, borderTopColor: t.border, paddingBottom: insets.bottom, paddingTop: 4 }, glass(t, 24)]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+        {[...ordered, { name: '__more', title: 'Menu', icon: 'menu' as IconName, hint: '' }].map((it) => {
+          const active = it.name !== '__more' && current === it.name;
+          const b = it.name === '__more' ? undefined : badgeOf(it.name);
           return (
             <Pressable key={it.name} onPress={() => (it.name === '__more' ? setMore(true) : go(it.name))}
               accessibilityRole="tab" accessibilityState={{ selected: active }} accessibilityLabel={it.title}
-              style={{ flex: 1, alignItems: 'center', paddingVertical: 6, gap: 2 }}>
+              style={{ width: 74, flexGrow: 1, alignItems: 'center', paddingVertical: 6, gap: 2 }}>
               <View>
                 <View style={{ paddingHorizontal: 14, paddingVertical: 3, borderRadius: 999, backgroundColor: active ? t.accentSoft : 'transparent' }}>
                   <Ionicons name={active ? it.icon : (`${it.icon}-outline` as IconName)} size={22} color={active ? t.accent : t.textSecondary} />
                 </View>
                 {b ? <View style={{ position: 'absolute', right: 2, top: -2 }}><Badge n={b} /></View> : null}
               </View>
-              <Text style={{ color: active ? t.accent : t.textSecondary, fontSize: 11.5, fontWeight: active ? '700' : '500' }} numberOfLines={1}>{it.title}</Text>
+              <Text style={{ color: active ? t.accent : t.textSecondary, fontSize: 11, fontWeight: active ? '700' : '500', textAlign: 'center' }} numberOfLines={2}>{it.title}</Text>
             </Pressable>
           );
         })}
+        </ScrollView>
       </View>
       <Modal visible={more} transparent animationType="slide" onRequestClose={() => setMore(false)}>
         <Pressable style={{ flex: 1, backgroundColor: t.overlay }} onPress={() => setMore(false)} />

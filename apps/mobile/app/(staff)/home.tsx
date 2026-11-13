@@ -4,11 +4,13 @@
  * month's attendance — one row per day with clock-in and clock-out times.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
-import { Button, Card, Empty, Label, Notice, Progress, Screen, Section, SmallButton, Stat } from '../../src/components/ui';
+import { Button, Card, Empty, glass, Label, Notice, Progress, Screen, Section, SmallButton, Stat, type IconName } from '../../src/components/ui';
 import { dmy, hoursLabel, monthLong, monthStart, timeIST } from '../../src/lib/dates';
 import { notify } from '../../src/lib/dialogs';
 import { todayIST } from '../../src/lib/ids';
@@ -78,6 +80,8 @@ export default function Home() {
           {d.me.warehouse_name ? ` · ${d.me.warehouse_name}` : ''}
         </Text>
       </View>
+
+      <QuickLinks />
 
       {/* ---------------- Today */}
       <Card title="Today" icon="time-outline" tone={open ? 'good' : firstIn ? undefined : 'warning'}
@@ -176,6 +180,33 @@ export default function Home() {
         {!d.recent_bills.length ? <Empty icon="document-text-outline" text="No bills yet this month" /> : null}
       </Card>
     </Screen>
+  );
+}
+
+/** Big buttons to every page, so nothing has to be searched for. */
+function QuickLinks() {
+  const t = useTheme();
+  const router = useRouter();
+  const links: { to: string; title: string; icon: IconName }[] = [
+    { to: '/outward', title: 'New sale', icon: 'arrow-up-circle' },
+    { to: '/inward', title: 'Purchase', icon: 'arrow-down-circle' },
+    { to: '/stock', title: 'Stock', icon: 'cube' },
+    { to: '/payments', title: 'Payments', icon: 'wallet' },
+    { to: '/transfers', title: 'Transfers', icon: 'swap-horizontal' },
+    { to: '/work', title: 'Clock & Visits', icon: 'time' },
+    { to: '/log', title: 'My Day', icon: 'today' },
+  ];
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {links.map((l) => (
+        <Pressable key={l.to} onPress={() => router.navigate(l.to as never)} accessibilityRole="link" accessibilityLabel={l.title}
+          style={({ pressed }) => [{ flexGrow: 1, flexBasis: 96, minHeight: 72, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14,
+            borderWidth: 1, borderColor: t.border, backgroundColor: pressed ? t.accentSoft : t.card, padding: 8 }, glass(t, 14)]}>
+          <Ionicons name={l.icon} size={24} color={t.accent} />
+          <Text style={{ color: t.text, fontSize: 12.5, fontWeight: '700', textAlign: 'center' }}>{l.title}</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
