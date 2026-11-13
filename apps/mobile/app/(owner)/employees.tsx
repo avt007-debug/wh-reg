@@ -14,6 +14,7 @@ import { exportXlsx } from '../../src/lib/exportFile';
 import { fileStamp } from '../../src/lib/warehouse';
 import { useTheme } from '../../src/theme';
 import { VisitRow, type Visit } from '../../src/components/VisitRow';
+import { OwnerRequests, OwnerVisitPlans } from '../../src/components/OwnerRequests';
 
 interface Stats {
   days_present: number; hours: number; missed_clock_outs: number; invoices: number; sales: number; customers_billed: number;
@@ -69,7 +70,9 @@ export default function Employees() {
           <SmallButton title={showRemoved ? 'Hide removed staff' : 'Show removed staff'} onPress={() => setShowRemoved((v) => !v)} />
         ) : null}
       </Toolbar>
+      <OwnerRequests employees={rows.filter((e) => !e.removed_at && e.role === 'EMPLOYEE')} />
       <SalesTargets month={month} />
+      <OwnerVisitPlans employees={rows.filter((e) => !e.removed_at && e.role === 'EMPLOYEE')} />
       {rows.map((e) => (
         <Pressable key={e.id} onPress={() => setOpen(e)}>
           <Card>

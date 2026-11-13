@@ -25,8 +25,10 @@ const toIso = (d: string) => {
 };
 export const LEDGER_KEYS = ['owner-ledger', 'my-ledger', 'statement', 'my-dashboard'];
 
-export function PaymentForm({ customer: fixed, onSaved }: { customer?: { id: string; name: string } | null; onSaved?: () => void }) {
+export function PaymentForm({ customer: fixed, onSaved }: { customer?: { id: string; name: string; phone?: string | null } | null; onSaved?: () => void }) {
   const qc = useQueryClient();
+  const biz = useQuery({ queryKey: ['business-profile'], staleTime: 3600_000, queryFn: () => rpc<{ name?: string }>('business_profile') });
+  const [receipt, setReceipt] = useState<{ name: string; phone: string | null; amount: number; date: string; mode: string; reference: string; balance: number } | null>(null);
   const [party, setParty] = useState<Party | null>(null);
   const [date, setDate] = useState(dmy(todayIST()));
   const [mode, setMode] = useState<(typeof MODES)[number]>('CASH');
@@ -42,6 +44,8 @@ export function PaymentForm({ customer: fixed, onSaved }: { customer?: { id: str
     }),
     onSuccess: (r) => {
       notify('Payment recorded', `${formatINR(Number(amount))} from ${fixed?.name ?? party?.name}. Balance now ${formatINR(n(r?.balance))}.`);
+      setReceipt({ name: fixed?.name ?? party?.name ?? '', phone: fixed?.phone ?? party?.phone ?? null, amount: Number(amount), date: dmy(iso!), mode,
+        reference: reference.trim(), balance: n(r?.balance) });
       setAmount(''); setReference(''); setNotes(''); if (!fixed) setParty(null);
       for (const k of LEDGER_KEYS) void qc.invalidateQueries({ queryKey: [k] });
       onSaved?.();
@@ -63,6 +67,17 @@ export function PaymentForm({ customer: fixed, onSaved }: { customer?: { id: str
         <Field label="Note (optional)" value={notes} onChangeText={setNotes} />
       </View>
       <Button title="Save payment" onPress={() => save.mutate()} busy={save.isPending} disabled={!customerId || !iso || !(Number(amount) > 0)} />
+      {receipt ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Label muted>{`Saved ${formatINR(receipt.amount)} from ${receipt.name}.`}</Label>
+          <SmallButton icon="logo-whatsapp" title="Send receipt on WhatsApp" onPress={() => {
+            void openWhatsApp(receipt.phone, [`*Payment receipt*${biz.data?.name ? ` — ${biz.data.name}` : ''}`, `Received with thanks from ${receipt.name}:`,
+              `*${formatINR(receipt.amount)}* by ${receipt.mode}${receipt.reference ? ` (ref ${receipt.reference})` : ''} on ${receipt.date}.`,
+              receipt.balance > 0 ? `Balance still due: ${formatINR(receipt.balance)}.` : 'Your account is fully paid. Thank you!'].join('\n'));
+            setReceipt(null);
+          }} />
+        </View>
+      ) : null}
     </Card>
   );
 }

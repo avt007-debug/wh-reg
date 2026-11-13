@@ -37,8 +37,8 @@ export default function Sales() {
   const [editing, setEditing] = useState<Sale | null>(null);
   const [returning, setReturning] = useState<Sale | null>(null);
   const fullOwner = useAuth((s) => s.user?.role) === 'OWNER';
-  const delivered = useQuery({ queryKey: ['delivered', month], queryFn: () => rpc<Record<string, string>>('owner_delivered_ids', { p_month: month }) });
   const month = monthStart(back);
+  const delivered = useQuery({ queryKey: ['delivered', month], queryFn: () => rpc<Record<string, string>>('owner_delivered_ids', { p_month: month }) });
   const list = useQuery({ queryKey: ['sales-month', month, wh], queryFn: () => rpc<Sale[]>('owner_sales_month', { p_month: month, p_warehouse: wh }) });
 
   const needle = search.trim().toLowerCase();

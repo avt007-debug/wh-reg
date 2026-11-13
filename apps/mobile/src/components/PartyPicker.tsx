@@ -15,7 +15,7 @@ export function PartyPicker({ kind, value, onChange }: { kind: 'customers' | 've
     queryKey: [kind, q],
     queryFn: () => {
       const term = q.replace(/[,()%*]/g, ' ').trim();     // keep PostgREST filter syntax intact
-      return run<Party[]>(supabase.from(kind).select('id, name, gstin, state_code, phone').eq('is_active', true)
+      return run<Party[]>(supabase.from(kind).select((kind === 'vendors' ? 'id, name, gstin, state_code, phone, default_discount_pct' : 'id, name, gstin, state_code, phone') as '*').eq('is_active', true)
         .or(`name.ilike.%${term}%,gstin.eq.${term.toUpperCase()}`).order('name').limit(30));
     },
     enabled: !value && q.length >= 2,

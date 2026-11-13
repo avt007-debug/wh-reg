@@ -1,3 +1,4 @@
+import { TextSize } from '../../src/components/TextSize';
 import { MyAccount } from '../../src/components/MyAccount';
 import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@wh/shared';
@@ -29,6 +30,7 @@ export default function MyDay() {
       <Label muted>Entries are locked once saved. Ask the owner to cancel a wrong entry, then re-enter it.</Label>
       <MyAccount />
       <Card title="Appearance" icon="color-palette-outline" subtitle="Day, Auto (follows your phone) or Night"><ThemeSwitch /></Card>
+      <TextSize />
       <Button title="Log out" icon="log-out-outline" kind="secondary" onPress={() => void logout()} />
     </Screen>
   );

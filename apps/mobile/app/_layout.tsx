@@ -9,6 +9,8 @@ import { PromptHost } from '../src/lib/dialogs';
 import { pageBgFixed } from '../src/components/ui';
 import { SessionGuard } from '../src/components/SessionGuard';
 import { UpdateBanner } from '../src/components/UpdateBanner';
+import { OfflineQueue } from '../src/components/OfflineQueue';
+import { applyScale, useTextSize } from '../src/lib/textSize';
 
 
 /**
@@ -56,6 +58,7 @@ function ThemeChrome() {
     document.body.style.backgroundSize = 'cover';
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.dark ? t.bg : '#D40000');
   }, [t]);
+  useEffect(() => { applyScale(useTextSize.getState().scale); }, []);
   return <StatusBar barStyle={t.dark ? 'light-content' : 'dark-content'} />;
 }
 
@@ -65,6 +68,7 @@ export default function RootLayout() {
       <ThemeChrome />
       <Navigator />
       <UpdateBanner />
+      <OfflineQueue />
       <SessionGuard />
       <PromptHost />
     </QueryClientProvider>

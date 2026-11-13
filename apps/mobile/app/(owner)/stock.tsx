@@ -10,6 +10,8 @@ import { formatBreakdown, formatINR, type Uom } from '@wh/shared';
 import { q, rpc } from '../../src/api/client';
 import { CompanyEditor } from '../../src/components/CompanyEditor';
 import { ItemEditor } from '../../src/components/ItemEditor';
+import { BulkPrice, HiddenItems, PriceListImport } from '../../src/components/PriceTools';
+import { useAuth } from '../../src/auth/store';
 import { Card, Chips, Field, Label, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
 import { askText, notify } from '../../src/lib/dialogs';
@@ -42,6 +44,8 @@ export default function OwnerStock() {
   const [showZero, setShowZero] = useState(false);
   const [edit, setEdit] = useState<string | null>(null);     // product id, or 'new'
   const [companies, setCompanies] = useState(false);
+  const [tool, setTool] = useState<'import' | 'bulk' | 'hidden' | null>(null);
+  const fullOwner = useAuth((s) => s.user?.role) === 'OWNER';
 
   const brands = useQuery({
     queryKey: ['brands'],
@@ -106,6 +110,9 @@ export default function OwnerStock() {
         <SmallButton title="✎ Edit companies" onPress={() => setCompanies(true)} />
         <SmallButton title={showZero ? 'Hide zero stock' : 'Show zero stock too'} onPress={() => setShowZero((v) => !v)} />
         <SmallButton icon="⬇" title="Export to Excel" onPress={doExport} disabled={!rows.length} />
+        {fullOwner ? <SmallButton icon="cloud-upload-outline" title="Import price list" onPress={() => setTool('import')} /> : null}
+        {fullOwner ? <SmallButton icon="trending-up-outline" title="Change prices by %" onPress={() => setTool('bulk')} /> : null}
+        <SmallButton icon="eye-off-outline" title="Hidden items" onPress={() => setTool('hidden')} />
       </Toolbar>
 
       <Card title={`${whName} · ${brandName}`} subtitle="Quantity on hand, cost and value per item — tap an item to edit it">
@@ -140,6 +147,9 @@ export default function OwnerStock() {
       </Card>
 
       <ItemEditor productId={edit === 'new' ? null : edit} visible={!!edit} onClose={() => setEdit(null)} defaultBrandId={brand} />
+      <PriceListImport visible={tool === 'import'} onClose={() => setTool(null)} />
+      <BulkPrice visible={tool === 'bulk'} onClose={() => setTool(null)} />
+      <HiddenItems visible={tool === 'hidden'} onClose={() => setTool(null)} />
       <CompanyEditor visible={companies} onClose={() => setCompanies(false)} />
     </Screen>
   );

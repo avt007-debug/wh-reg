@@ -14,13 +14,14 @@ import { notify } from '../lib/dialogs';
 import { supabase } from '../lib/supabase';
 import { useOwnerWarehouse, useWarehouses } from '../lib/warehouse';
 import { useTheme } from '../theme';
+import { ItemExtras } from './ItemExtras';
 import { PriceGstField } from './PriceGstField';
 import { Button, Card, Chips, Field, Label, Row, SmallButton, pageBg } from './ui';
 
 interface Product {
   id: string; sku_code: string; name: string; brand_id: string | null; category_id: string | null; specification: string | null;
   hsn_code: string | null; gst_rate: number; base_uom: string; mrp: number | null; selling_price: number | null;
-  reorder_level: number; packs: { code: string; factor: number; name: string }[];
+  reorder_level: number; packs: { code: string; factor: number; name: string }[]; is_active?: boolean;
 }
 interface History { at: string; movement: string; qty: number; warehouse: string; entered_by: string; entered_by_role: string; posted_by: string; reference: string }
 interface Pack { code: string; factor: string }
@@ -33,6 +34,7 @@ const REASON_LABEL: Record<(typeof REASONS)[number], string> = {
 const MOVE_LABEL: Record<string, string> = {
   PURCHASE_IN: 'Purchase in', DISPATCH_OUT: 'Sale out', TRANSFER_OUT: 'Transfer out', TRANSFER_IN: 'Transfer in',
   ADJUST_AUDIT: 'Stock count', ADJUST_DAMAGE: 'Damaged', ADJUST_LOSS: 'Lost', ADJUST_FOUND: 'Found', OPENING: 'Opening stock', REVERSAL: 'Reversed',
+  SALES_RETURN: 'Returned by customer', PURCHASE_RETURN: 'Returned to supplier',
 };
 const n = (x: unknown) => Number(x ?? 0);
 
@@ -44,7 +46,7 @@ export function ItemEditor({ productId, visible, onClose, defaultBrandId }: {
   const qc = useQueryClient();
   const whs = useWarehouses();
   const isNew = !productId;
-  const [tab, setTab] = useState<'Details' | 'Stock' | 'History'>('Details');
+  const [tab, setTab] = useState<'Details' | 'Stock' | 'History' | 'Photos & more'>('Details');
 
   const prod = useQuery({ queryKey: ['owner-product', productId], enabled: visible && !!productId, queryFn: () => rpc<Product>('owner_product', { p_id: productId }) });
   const brands = useQuery({ queryKey: ['brands'], queryFn: () => q<{ id: string; name: string }[]>(supabase.from('brands').select('id, name').eq('is_active', true).order('name')) });
@@ -119,7 +121,7 @@ export function ItemEditor({ productId, visible, onClose, defaultBrandId }: {
           <Text style={{ flex: 1, color: t.text, fontSize: 20, fontWeight: '700' }}>{isNew ? 'Add item' : `Edit · ${prod.data?.name ?? ''}`}</Text>
           <SmallButton title="Close" onPress={close} />
         </View>
-        {!isNew ? <Chips options={['Details', 'Stock', 'History'] as const} value={tab} onChange={setTab}
+        {!isNew ? <Chips options={['Details', 'Stock', 'History', 'Photos & more'] as const} value={tab} onChange={setTab}
           format={(v) => (v === 'History' ? 'Who entered stock' : v === 'Stock' ? 'Correct stock' : 'Item details')} /> : null}
 
         {!ready ? <Label muted>Loading…</Label> : tab === 'Details' ? (
@@ -185,6 +187,8 @@ export function ItemEditor({ productId, visible, onClose, defaultBrandId }: {
           </>
         ) : tab === 'Stock' && productId ? (
           <StockCorrection productId={productId} />
+        ) : tab === 'Photos & more' && productId ? (
+          <ItemExtras productId={productId} active={prod.data?.is_active !== false} name={prod.data?.name ?? ''} onClose={onClose} />
         ) : productId ? (
           <StockHistory productId={productId} />
         ) : null}

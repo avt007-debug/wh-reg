@@ -14,16 +14,14 @@ import { ReminderSettings } from '../../src/components/ReminderSettings';
 import { MyAccount } from '../../src/components/MyAccount';
 import { LoginSecurity, RecoveryCodes } from '../../src/components/LoginSecurity';
 import { notify } from '../../src/lib/dialogs';
+import { BusinessProfile } from '../../src/components/BusinessProfile';
+import { ExportAll } from '../../src/components/ExportAll';
+import { TextSize } from '../../src/components/TextSize';
+import { useAuth } from '../../src/auth/store';
 
 
 export default function Settings() {
-  const qc = useQueryClient();
-  const [pin, setPin] = useState('');
-  const savePin = useMutation({
-    mutationFn: () => rpc('owner_set_override_pin', { p_pin: pin }),
-    onSuccess: () => { setPin(''); void qc.invalidateQueries({ queryKey: ['users'] }); notify('Override PIN saved'); },
-    onError: (e) => notify('Not saved', e instanceof Error ? e.message : String(e)),
-  });
+  const manager = useAuth((s) => s.user?.role) === 'ADMIN';
 
   return (
     <Screen>
@@ -31,6 +29,28 @@ export default function Settings() {
       <Card title="Appearance" icon="color-palette-outline" subtitle="Day is bright for daylight; Night is dark and easy on the eyes. Auto follows your phone or computer.">
         <ThemeSwitch />
       </Card>
+      <TextSize />
+      {manager ? (
+        <Card title="Manager login" icon="shield-half-outline">
+          <Label muted>You are logged in as a manager. Staff logins, passwords, security, WhatsApp reminders, prices, targets and profit & loss are handled by the owner.</Label>
+        </Card>
+      ) : <ManagerOnlyHidden />}
+    </Screen>
+  );
+}
+
+function ManagerOnlyHidden() {
+  const qc = useQueryClient();
+  const [pin, setPin] = useState('');
+  const savePin = useMutation({
+    mutationFn: () => rpc('owner_set_override_pin', { p_pin: pin }),
+    onSuccess: () => { setPin(''); void qc.invalidateQueries({ queryKey: ['users'] }); notify('Override PIN saved'); },
+    onError: (e) => notify('Not saved', e instanceof Error ? e.message : String(e)),
+  });
+  return (
+    <>
+      <BusinessProfile />
+      <ExportAll />
       <Section title="People & places" />
       <StaffAdmin />
       <WarehouseAdmin />
@@ -45,6 +65,6 @@ export default function Settings() {
       </Card>
 
       <ReminderSettings />
-    </Screen>
+    </>
   );
 }

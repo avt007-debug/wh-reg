@@ -60,3 +60,29 @@ export async function uploadPurchaseDoc(warehouseId: string, uri: string, mimeTy
   if (error) throw new ApiError('VALIDATION', `Photo upload failed: ${error.message}`);
   return path;
 }
+
+/** Field photo (delivery proof, signature, market run) into the private 'field-photos' bucket under '<user id>/'. */
+export async function uploadFieldPhoto(userId: string, uri: string, kind: string, mimeType: 'image/jpeg' | 'image/png' = 'image/jpeg') {
+  const path = `${userId}/${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${mimeType === 'image/png' ? 'png' : 'jpg'}`;
+  const bytes = await (await fetch(uri)).arrayBuffer();
+  const { error } = await supabase.storage.from('field-photos').upload(path, bytes, { contentType: mimeType, upsert: false });
+  if (error) throw new ApiError('VALIDATION', `Photo upload failed: ${error.message}`);
+  return path;
+}
+
+/** Short-lived link to view a private field photo. */
+export async function fieldPhotoUrl(path: string) {
+  const { data, error } = await supabase.storage.from('field-photos').createSignedUrl(path, 600);
+  if (error) throw new ApiError('VALIDATION', error.message);
+  return data.signedUrl;
+}
+
+/** Item photo (public 'product-images' bucket) — returns the storage path '<productId>/<file>'. */
+export async function uploadItemPhoto(productId: string, uri: string) {
+  const path = `${productId}/${Date.now()}.jpg`;
+  const bytes = await (await fetch(uri)).arrayBuffer();
+  const { error } = await supabase.storage.from('product-images').upload(path, bytes, { contentType: 'image/jpeg', upsert: false });
+  if (error) throw new ApiError('VALIDATION', `Photo upload failed: ${error.message}`);
+  return path;
+}
+export const itemPhotoUrl = (path: string) => supabase.storage.from('product-images').getPublicUrl(path).data.publicUrl;

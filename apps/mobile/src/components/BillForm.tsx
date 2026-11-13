@@ -17,8 +17,11 @@ import {
 } from '@wh/shared';
 import { ApiError, q, rpc, uploadPurchaseDoc } from '../api/client';
 import { toUoms, type Me, type Party, type ProductHit } from '../api/types';
+import { useAuth } from '../auth/store';
 import { dmy } from '../lib/dates';
-import { notify } from '../lib/dialogs';
+import { askText, confirmAsk, notify } from '../lib/dialogs';
+import type { InvBill } from '../lib/invoice';
+import { draftKey, isOffline, loadDraft, saveDraft, useOutbox } from '../lib/outbox';
 import { newClientTxnId, todayIST } from '../lib/ids';
 import { supabase } from '../lib/supabase';
 import { useWarehouses } from '../lib/warehouse';
@@ -30,7 +33,7 @@ import { NewItemSheet } from './NewItemSheet';
 import { OverridePinSheet } from './OverridePinSheet';
 import { PartyPicker } from './PartyPicker';
 import { QtyUomField } from './QtyUomField';
-import { Button, Card, Chips, Field, Label, Row, SmallButton } from './ui';
+import { Button, Card, Chips, Field, Label, Notice, Row, SmallButton } from './ui';
 
 type Kind = 'sale' | 'purchase';
 interface Line { product: ProductHit; uomCode: string; qty: string; hsn: string; gstRate: number; price: string; discPct: string; creditPct: string }
@@ -51,7 +54,16 @@ export function billLine(kind: Kind, qty: number, price: number, discPct: number
   } catch { return saleLine(0, 0, 0, gst); }
 }
 
-export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?: boolean; onSaved?: () => void }) {
+interface Snapshot {
+  balance: number; overdue: number; oldest_overdue_days: number | null; credit_limit: number | null; credit_days: number; over_limit: boolean;
+  last_bill: { invoice_no: string; invoice_date: string; total: number; by: string; items: number } | null;
+  last_payment: { paid_on: string; amount: number; mode: string } | null;
+  items: { product_id: string; uom: string; price: number; discount_pct: number; date: string; qty: number }[];
+}
+interface Draft { whId: string | null; invoiceNo: string; invoiceDate: string; lr: string; partyMode: 'Existing' | 'New'; party: Party | null;
+  newName: string; newGstin: string; newPhone: string; lines: Line[]; loading: string; transport: string; other: string }
+
+export function BillForm({ kind, owner = false, onSaved, editOf }: { kind: Kind; owner?: boolean; onSaved?: () => void; editOf?: InvBill }) {
   const t = useTheme();
   const qc = useQueryClient();
   const isSale = kind === 'sale';
@@ -78,19 +90,64 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
   const [allCredit, setAllCredit] = useState('');
   const [photo, setPhoto] = useState<{ uri: string; mime: 'image/jpeg' } | null>(null);
   const [shortfalls, setShortfalls] = useState<StockShortfall[] | null>(null);
+  const [draft, setDraft] = useState<(Draft & { savedAt: string }) | null>(null);
+  const userId = useAuth((s) => s.user?.id);
+  const dKey = draftKey(kind, userId);
+  const queue = useOutbox((s) => s.add);
+
+  // Editing an existing bill (owner): load it into the form once.
+  useEffect(() => {
+    if (!editOf) { const d = loadDraft<Draft>(dKey); if (d && (d.lines?.length || d.party || d.newName)) setDraft(d); return; }
+    setInvoiceNo(editOf.invoice_no); setInvoiceDate(dmy(editOf.invoice_date)); setWhId(editOf.warehouse_id);
+    setParty({ id: editOf.customer_id, name: editOf.customer_name, gstin: editOf.customer_gstin, state_code: editOf.place_of_supply, phone: editOf.customer_phone });
+    setLoading(Number(editOf.loading_charges) ? String(Number(editOf.loading_charges)) : '');
+    setTransport(Number(editOf.transport_charges) ? String(Number(editOf.transport_charges)) : '');
+    setOther(Number(editOf.other_charges) ? String(Number(editOf.other_charges)) : '');
+    void Promise.all(editOf.lines.map((l) => rpc<ProductHit[]>('find_material', { p_code: l.sku_code, lim: 5, p_warehouse: editOf.warehouse_id })
+      .then((r) => r.find((h) => h.id === l.product_id) ?? null, () => null)))
+      .then((hits) => setLines(editOf.lines.flatMap((l, i) => {
+        const h = hits[i];
+        if (!h) return [];
+        // stock shown = what is on the shelf + what this bill already took (it is put back when the edit is saved)
+        const back = Number(l.qty) * Number(h.uoms.find((u) => u.code === l.uom)?.factor ?? 1);
+        return [{ product: { ...h, qty_on_hand: Number(h.qty_on_hand) + back }, uomCode: l.uom, qty: String(Number(l.qty)), hsn: l.hsn_code ?? '',
+          gstRate: Number(l.gst_rate), price: money(Number(l.unit_base_price)), discPct: Number(l.discount_pct) ? String(Number(l.discount_pct)) : '', creditPct: '' }];
+      })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editOf?.id]);
+
+  // Keep an unfinished bill on this phone so nothing is lost if the app closes.
+  useEffect(() => {
+    if (editOf || draft) return;
+    const empty = !lines.length && !party && !newName.trim();
+    const id = setTimeout(() => saveDraft(dKey, empty ? null : { whId, invoiceNo, invoiceDate, lr, partyMode, party, newName, newGstin, newPhone, lines, loading, transport, other }), 600);
+    return () => clearTimeout(id);
+  }, [editOf, draft, dKey, whId, invoiceNo, invoiceDate, lr, partyMode, party, newName, newGstin, newPhone, lines, loading, transport, other]);
+  const resumeDraft = () => {
+    const d = draft!; setDraft(null);
+    setWhId(d.whId); setInvoiceNo(d.invoiceNo); setInvoiceDate(d.invoiceDate); setLr(d.lr); setPartyMode(d.partyMode); setParty(d.party);
+    setNewName(d.newName); setNewGstin(d.newGstin); setNewPhone(d.newPhone); setLines(d.lines); setLoading(d.loading); setTransport(d.transport); setOther(d.other);
+  };
+  const discardDraft = () => { saveDraft(dKey, null); setDraft(null); };
+
+  // Customer history while billing: what they owe, overdue, credit limit, last prices.
+  const snap = useQuery({ queryKey: ['customer-snapshot', party?.id], enabled: isSale && partyMode === 'Existing' && !!party?.id,
+    queryFn: () => rpc<Snapshot>('customer_snapshot', { p_customer: party!.id }) });
+  const lastPrice = new Map((snap.data?.items ?? []).map((x) => [x.product_id, x]));
 
   const partyWord = isSale ? 'customer' : 'seller';
   // Sales: owner AND employees choose the dispatch warehouse (stock is reduced there).
   // Purchases: owner chooses; employees enter for their own warehouse.
-  const pickWh = owner || isSale;
+  const pickWh = (owner || isSale) && !editOf;
+  const lockedWh = editOf ? whs.data?.find((w) => w.id === editOf.warehouse_id) : undefined;
   const defaultWh = owner ? whs.data?.[0]?.id : me.data?.warehouse_id ?? whs.data?.[0]?.id;
-  const warehouse = pickWh ? whs.data?.find((w) => w.id === (whId ?? defaultWh)) : undefined;
-  const warehouseId = pickWh ? warehouse?.id : me.data?.warehouse_id ?? undefined;
-  const whState = pickWh ? warehouse?.state_code : me.data?.warehouse_state;
+  const warehouse = lockedWh ?? (pickWh ? whs.data?.find((w) => w.id === (whId ?? defaultWh)) : undefined);
+  const warehouseId = editOf ? editOf.warehouse_id : pickWh ? warehouse?.id : me.data?.warehouse_id ?? undefined;
+  const whState = editOf || pickWh ? warehouse?.state_code : me.data?.warehouse_state;
 
   // When the dispatch warehouse changes, refresh "In stock" on lines already added.
   useEffect(() => {
-    if (!isSale || !warehouseId || !lines.length) return;
+    if (!isSale || !warehouseId || !lines.length || editOf) return;   // editing: warehouse is fixed and stock already includes this bill
     let live = true;
     void Promise.all(lines.map((l) => rpc<ProductHit[]>('find_material', { p_code: l.product.sku_code, lim: 1, p_warehouse: warehouseId })
       .then((r) => (r[0]?.id === l.product.id ? Number(r[0].qty_on_hand) : null), () => null)))
@@ -111,6 +168,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
   const creditValue = lines.reduce((a, l, i) => a + Math.round(amounts[i]!.taxable * num(l.creditPct)) / 100, 0);
 
   const reset = () => {
+    saveDraft(dKey, null);
     setTxnId(newClientTxnId()); setLines([]); setParty(null); setNewName(''); setNewGstin(''); setNewPhone('');
     setInvoiceNo(''); setLr(''); setLoading(''); setTransport(''); setOther(''); setAllCredit(''); setPhoto(null); setShortfalls(null);
   };
@@ -131,8 +189,19 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
 
   const save = useMutation({
     mutationFn: async (overrideId?: string) => {
+      if (editOf) {
+        const reason = await askText('Why are you changing this bill?', 'Kept with the old version of the bill (optional).', { optional: true });
+        if (reason === null) throw new Error('cancelled');
+        const r = await rpc<{ dispatch: { invoice_no: string; grand_total: number }; revision: number }>('owner_edit_dispatch', {
+          p_id: editOf.id,
+          p: { invoiceDate: toIso(invoiceDate) ?? undefined, customerId: partyMode === 'Existing' ? party?.id : undefined, newCustomer: partyJson,
+            loadingCharges: num(loading), transportCharges: num(transport), otherCharges: num(other), overrideId, reason: reason || undefined,
+            lines: lines.map(lineJson) },
+        });
+        return { title: 'Bill updated', msg: `Invoice ${r.dispatch.invoice_no} · ${formatINR(r.dispatch.grand_total)} (old version kept as revision ${r.revision})` };
+      }
       if (isSale) {
-        const r = await rpc<{ dispatch: { invoice_no: string; grand_total: number } }>('create_dispatch', {
+        const args = {
           p: {
             clientTxnId: txnId, warehouseId,
             invoiceDate: owner ? toIso(invoiceDate) ?? undefined : undefined, invoiceNo: invoiceNo.trim() || undefined,
@@ -140,13 +209,21 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
             loadingCharges: num(loading), transportCharges: num(transport), otherCharges: num(other), overrideId,
             lines: lines.map(lineJson),
           },
-        });
-        return { title: 'Sale saved', msg: `Invoice ${r.dispatch.invoice_no} · ${formatINR(r.dispatch.grand_total)}` };
+        };
+        const who = partyMode === 'Existing' ? party?.name : newName.trim();
+        try {
+          const r = await rpc<{ dispatch: { invoice_no: string; grand_total: number } }>('create_dispatch', args);
+          return { title: 'Sale saved', msg: `Invoice ${r.dispatch.invoice_no} · ${formatINR(r.dispatch.grand_total)}` };
+        } catch (e) {
+          if (!isOffline(e)) throw e;
+          queue({ id: txnId, fn: 'create_dispatch', args, label: `sale to ${who} (${formatINR(billTotal)})`, queuedAt: new Date().toISOString() });
+          return { title: 'No internet — saved on this phone', msg: `The sale to ${who} will be sent by itself when the internet is back. Keep the app open or open it again later.` };
+        }
       }
       const attachments = photo && warehouseId
         ? [{ kind: 'LORRY_RECEIPT', storagePath: await uploadPurchaseDoc(warehouseId, photo.uri, photo.mime, txnId), mimeType: photo.mime }]
         : [];
-      const r = await rpc<{ purchase: { grand_total: number; status: string } }>('create_purchase', {
+      const purchaseArgs = {
         p: {
           clientTxnId: txnId, warehouseId: owner ? warehouseId : undefined,
           vendorId: partyMode === 'Existing' ? party?.id : undefined, newVendor: partyJson,
@@ -154,7 +231,15 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
           freightAmount: num(transport), loadingCharges: num(loading), otherCharges: num(other), attachments,
           lines: lines.map(lineJson),
         },
-      });
+      };
+      let r: { purchase: { grand_total: number; status: string } };
+      try {
+        r = await rpc<{ purchase: { grand_total: number; status: string } }>('create_purchase', purchaseArgs);
+      } catch (e) {
+        if (!isOffline(e) || attachments.length) throw e;
+        queue({ id: txnId, fn: 'create_purchase', args: purchaseArgs, label: `purchase ${invoiceNo.trim()} (${formatINR(billTotal)})`, queuedAt: new Date().toISOString() });
+        return { title: 'No internet — saved on this phone', msg: 'The purchase will be sent by itself when the internet is back.' };
+      }
       return r.purchase.status === 'PENDING'
         ? { title: 'Sent to the owner for approval', msg: `Bill total ${formatINR(r.purchase.grand_total)}. Stock is added once the owner approves it.` }
         : { title: 'Purchase saved', msg: `Bill total ${formatINR(r.purchase.grand_total)} · added to stock` };
@@ -167,18 +252,32 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
       onSaved?.();
     },
     onError: (e) => {
+      if (e instanceof Error && e.message === 'cancelled') return;
       if (e instanceof ApiError && e.code === 'INSUFFICIENT_STOCK') setShortfalls(e.details as StockShortfall[]);
       else notify('Could not save', e instanceof Error ? e.message : String(e));
     },
   });
 
+  const vendorDisc = !isSale && partyMode === 'Existing' ? Number(party?.default_discount_pct ?? 0) : 0;
   const addProduct = (p: ProductHit) => {
     const base = p.uoms.find((u) => Number(u.factor) === 1)?.code ?? p.uoms[0]?.code ?? 'PCS';
+    // Purchases: start from the list price minus this supplier's usual discount (both can be changed).
     setLines((ls) => [...ls, {
       product: p, uomCode: base, qty: '', hsn: p.hsn_code ?? '', gstRate: Number(p.default_gst_rate),
-      price: isSale && p.default_selling_price != null ? money(Number(p.default_selling_price)) : '',
-      discPct: '', creditPct: allCredit,
+      price: p.default_selling_price != null && (isSale || vendorDisc > 0) ? money(Number(p.default_selling_price)) : '',
+      discPct: !isSale && vendorDisc > 0 ? String(vendorDisc) : '', creditPct: allCredit,
     }]);
+  };
+  const repeatLast = async () => {
+    if (!party?.id) return;
+    if (lines.length && !(await confirmAsk('Replace the items?', 'The items already on this bill are replaced with the last order.', 'Replace'))) return;
+    try {
+      const r = await rpc<{ hit: ProductHit; uom: string; qty: number; price: number; discount_pct: number; gst_rate: number; hsn_code: string | null }[]>(
+        'customer_last_order', { p_customer: party.id, p_warehouse: warehouseId });
+      setLines(r.map((x) => ({ product: x.hit, uomCode: x.uom, qty: String(Number(x.qty)), hsn: x.hsn_code ?? x.hit.hsn_code ?? '', gstRate: Number(x.gst_rate),
+        price: money(Number(x.price)), discPct: Number(x.discount_pct) ? String(Number(x.discount_pct)) : '', creditPct: '' })));
+      if (!r.length) notify('Nothing to repeat', 'No earlier bill for this customer.');
+    } catch (e) { notify('Could not load the last order', e instanceof Error ? e.message : String(e)); }
   };
   const update = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const changeUom = (i: number, code: string) => {
@@ -198,7 +297,16 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
 
   return (
     <View style={{ gap: 12 }}>
-      <Card title={isSale ? 'Bill' : "Seller's bill"}>
+      {draft ? (
+        <Notice tone="warning" icon="document-text-outline">
+          {`You have an unfinished ${isSale ? 'sale' : 'purchase'} from ${new Date(draft.savedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`
+            + ` (${draft.lines.length} item(s)${draft.party?.name || draft.newName ? `, ${draft.party?.name ?? draft.newName}` : ''}).`}
+          {'\n'}<Text style={{ color: t.accent, fontWeight: '800' }} onPress={resumeDraft}>Continue it</Text>{'   ·   '}
+          <Text style={{ color: t.textSecondary, fontWeight: '700' }} onPress={discardDraft}>Start fresh</Text>
+        </Notice>
+      ) : null}
+      <Card title={editOf ? `Editing bill ${editOf.invoice_no}` : isSale ? 'Bill' : "Seller's bill"}>
+        {editOf ? <Label muted>Dispatched from {warehouse?.name ?? '…'} · bill number stays {editOf.invoice_no}. Stock is corrected when you save.</Label> : null}
         {pickWh ? (
           <>
             <Label>{isSale ? 'Dispatch from warehouse' : 'Warehouse'}</Label>
@@ -206,10 +314,10 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
               format={(v) => { const w = whs.data?.find((x) => x.id === v); return w ? `${w.name} (${w.code})` : v; }} />
             {isSale ? <Label muted>Stock is reduced in {warehouse?.name ?? 'this warehouse'} and the bill number uses its series ({warehouse?.code ?? '…'}/…).</Label> : null}
           </>
-        ) : <Label muted>{me.data?.warehouse_name}</Label>}
-        <Field label={isSale ? 'Invoice number (leave blank for automatic)' : "Seller's invoice number"} value={invoiceNo}
+        ) : editOf ? null : <Label muted>{me.data?.warehouse_name}</Label>}
+        {editOf ? null : <Field label={isSale ? 'Invoice number (leave blank for automatic)' : "Seller's invoice number"} value={invoiceNo}
           onChangeText={(v) => setInvoiceNo(v.toUpperCase())} autoCapitalize="characters" maxLength={isSale ? 16 : 40}
-          placeholder={isSale ? `e.g. ${warehouse?.code ?? 'CTR'}-101` : 'as printed on the bill'} />
+          placeholder={isSale ? `e.g. ${warehouse?.code ?? 'CTR'}-101` : 'as printed on the bill'} />}
         {owner || !isSale ? (
           <Field label="Invoice date (DD-MM-YYYY)" value={invoiceDate} onChangeText={setInvoiceDate}
             error={invoiceDate && !toIso(invoiceDate) ? 'Use DD-MM-YYYY' : undefined} />
@@ -237,6 +345,25 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
           </>
         )}
         {party?.gstin && partyMode === 'Existing' ? <Label muted>GSTIN {party.gstin}</Label> : null}
+        {vendorDisc > 0 ? <Label muted>This supplier's usual discount: {vendorDisc}% off the list price (filled in on each item — you can change it).</Label> : null}
+        {snap.data ? (
+          <View style={{ gap: 4 }}>
+            <Row left="Balance to collect" right={formatINR(Number(snap.data.balance))}
+              sub={snap.data.last_payment ? `last paid ${formatINR(Number(snap.data.last_payment.amount))} on ${dmy(snap.data.last_payment.paid_on)}` : 'no payment yet'} />
+            {Number(snap.data.overdue) > 0 ? (
+              <Notice tone="danger" icon="alert-circle-outline">{`${formatINR(Number(snap.data.overdue))} is overdue (oldest ${snap.data.oldest_overdue_days} days). Collect before giving more credit.`}</Notice>
+            ) : null}
+            {snap.data.over_limit ? (
+              <Notice tone="danger" icon="hand-left-outline">{`Over the credit limit of ${formatINR(Number(snap.data.credit_limit))}. Ask the owner before billing on credit.`}</Notice>
+            ) : snap.data.credit_limit != null ? <Label muted>Credit limit {formatINR(Number(snap.data.credit_limit))} · {snap.data.credit_days} days</Label> : null}
+            {snap.data.last_bill ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Label muted>{`Last bill ${snap.data.last_bill.invoice_no} on ${dmy(snap.data.last_bill.invoice_date)} · ${formatINR(Number(snap.data.last_bill.total))} · ${snap.data.last_bill.items} item(s) by ${snap.data.last_bill.by}`}</Label>
+                {!editOf ? <SmallButton icon="repeat-outline" title="Repeat last order" onPress={() => void repeatLast()} /> : null}
+              </View>
+            ) : <Label muted>First bill for this customer</Label>}
+          </View>
+        ) : null}
       </Card>
 
       {lines.map((l, i) => {
@@ -249,6 +376,8 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
                 <Label muted>Material No. {l.product.sku_code}{l.product.brand ? ` · ${l.product.brand}` : ''}</Label>
                 {l.product.specification ? <Label muted>{l.product.specification}</Label> : null}
                 {isSale ? <Label muted>In stock at {warehouse?.name ?? 'this warehouse'}: {Number(l.product.qty_on_hand)} {l.product.uoms.find((u) => Number(u.factor) === 1)?.code ?? 'PCS'}</Label> : null}
+                {isSale && lastPrice.get(l.product.id) ? (() => { const lp = lastPrice.get(l.product.id)!; return (
+                  <Label muted>{`Last sold to this customer: ${formatINR(Number(lp.price))}/${lp.uom}${Number(lp.discount_pct) ? ` − ${Number(lp.discount_pct)}%` : ''} on ${dmy(lp.date)}`}</Label>); })() : null}
                 <GstTag rate={l.gstRate} />
               </View>
               <SmallButton title="Remove" kind="danger" onPress={() => setLines((ls) => ls.filter((_, j) => j !== i))} />
@@ -310,13 +439,13 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
           <Row left="Credit note earned" sub="for future purchases from this seller · not deducted now" right={formatINR(creditValue)} />
         ) : null}
       </Card>
-      <Button title={isSale ? 'Save sale' : owner ? 'Save purchase' : 'Send purchase for approval'} onPress={() => save.mutate(undefined)}
+      <Button title={editOf ? 'Save changes to the bill' : isSale ? 'Save sale' : owner ? 'Save purchase' : 'Send purchase for approval'} onPress={() => save.mutate(undefined)}
         busy={save.isPending} disabled={!valid} />
 
       <ItemPicker visible={picking} onClose={() => setPicking(false)} onPick={addProduct} />
       <NewItemSheet visible={creating != null} initialCode={creating ?? ''} onClose={() => setCreating(null)} onCreated={addProduct} forPurchase={!isSale} />
       {isSale ? (
-        <OverridePinSheet shortfalls={shortfalls} warehouseId={pickWh ? warehouseId : undefined}
+        <OverridePinSheet shortfalls={shortfalls} warehouseId={pickWh || editOf ? warehouseId : undefined}
           onCancel={() => setShortfalls(null)} onApproved={(id) => save.mutate(id)} />
       ) : null}
     </View>

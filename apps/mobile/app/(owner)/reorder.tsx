@@ -4,6 +4,7 @@ import { Pressable, Text, View } from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
 import { Button, Card, Field, Label, Screen, SmallButton, Toolbar } from '../../src/components/ui';
+import { BulkReorder } from '../../src/components/BulkReorder';
 import { useSelectedWarehouseName, WarehouseSwitch } from '../../src/components/WarehouseSwitch';
 import { notify } from '../../src/lib/dialogs';
 import { exportXlsx } from '../../src/lib/exportFile';
@@ -19,6 +20,7 @@ interface Alert_ {
 
 /** Current Stock ≤ Minimum Reorder Threshold, with last price & vendor; select → one-click PO; export to Excel. */
 export default function Reorder() {
+  const [bulk, setBulk] = useState(false);
   const t = useTheme();
   const qc = useQueryClient();
   const wh = useOwnerWarehouse((s) => s.id);
@@ -72,6 +74,7 @@ export default function Reorder() {
       <WarehouseSwitch />
       <Field label="Search by item name, code or vendor" value={search} onChangeText={setSearch} autoCapitalize="none" />
       <Toolbar>
+        <SmallButton icon="options-outline" title="Set reorder levels in bulk" onPress={() => setBulk(true)} />
         <SmallButton title={allOn ? 'Clear selection' : 'Select all'} onPress={() =>
           setSel(allOn ? {} : Object.fromEntries(rows.map((a) => [key(a), true])))} disabled={!rows.length} />
         <SmallButton icon="⬇" title={chosen.length ? `Export ${chosen.length} selected to Excel` : 'Export list to Excel'}
@@ -108,6 +111,7 @@ export default function Reorder() {
       {!rows.length ? <Label muted>{q.isLoading ? 'Loading…' : 'Nothing below reorder level 🎉'}</Label> : null}
       <Button title={`Create purchase order for ${chosen.length} item(s)`} onPress={() => po.mutate()}
         busy={po.isPending} disabled={!chosen.length} />
+      <BulkReorder visible={bulk} onClose={() => setBulk(false)} />
     </Screen>
   );
 }

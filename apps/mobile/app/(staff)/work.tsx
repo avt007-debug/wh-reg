@@ -5,7 +5,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
-import { rpc } from '../../src/api/client';
+import * as ImagePicker from 'expo-image-picker';
+import { rpc, uploadFieldPhoto } from '../../src/api/client';
+import { useAuth } from '../../src/auth/store';
+import { currentPosition } from '../../src/lib/location';
 import { Button, Card, Chips, Field, Label, Row, Screen, SmallButton, Toolbar } from '../../src/components/ui';
 import { OUTCOME, OUTCOMES, VisitRow, type Visit } from '../../src/components/VisitRow';
 import { dmy, hoursLabel, monthLong, timeIST } from '../../src/lib/dates';
@@ -90,13 +93,26 @@ function MarketRunForm() {
   const [place, setPlace] = useState('');
   const [notes, setNotes] = useState('');
   const [customers, setCustomers] = useState<CustomerDraft[]>([]);
+  const [photo, setPhoto] = useState<string | null>(null);
+  const uid = useAuth((s) => s.user?.id);
   const recent = [...new Set((month.data?.runs ?? []).map((r) => r.place))].slice(0, 8);
+  const takePhoto = async () => {
+    await ImagePicker.requestCameraPermissionsAsync();
+    const r = await ImagePicker.launchCameraAsync({ quality: 0.5, mediaTypes: ['images'] });
+    if (!r.canceled && r.assets[0]) setPhoto(r.assets[0].uri);
+  };
 
   const save = useMutation({
-    mutationFn: () => rpc<Run>('log_market_run', { p: { place: place.trim(), notes: notes.trim() || null, visits: customers.filter((c) => c.customerName.trim()) } }),
+    mutationFn: async () => {
+      const pos = currentPosition();          // ask for location while saving
+      const run = await rpc<Run>('log_market_run', { p: { place: place.trim(), notes: notes.trim() || null, visits: customers.filter((c) => c.customerName.trim()) } });
+      const [p, key] = await Promise.all([pos, photo && uid ? uploadFieldPhoto(uid, photo, 'run').catch(() => null) : Promise.resolve(null)]);
+      if (p || key) await rpc('set_field_location', { p_kind: 'run', p_id: run.id, p_lat: p?.lat ?? null, p_lng: p?.lng ?? null, p_accuracy: p?.accuracy ?? null, p_photo: key }).catch(() => undefined);
+      return { ...run, located: !!p, photo: !!key };
+    },
     onSuccess: (r) => {
-      notify('Market run saved', `${r.place} · ${r.visits.length} customer(s)`);
-      setPlace(''); setNotes(''); setCustomers([]);
+      notify('Market run saved', `${r.place} · ${r.visits.length} customer(s)${r.located ? ' · location saved' : ''}${r.photo ? ' · photo saved' : ''}`);
+      setPlace(''); setNotes(''); setCustomers([]); setPhoto(null);
       void qc.invalidateQueries({ queryKey: ['my-field'] });
     },
     onError: fail,
@@ -112,6 +128,8 @@ function MarketRunForm() {
           onRemove={() => setCustomers((cs) => cs.filter((_, j) => j !== i))} />
       ))}
       <SmallButton title="＋ Add customer approached" onPress={() => setCustomers((cs) => [...cs, blankCustomer()])} />
+      <SmallButton icon="camera-outline" title={photo ? '✓ Photo taken — retake' : 'Photo of the market / shop (optional)'} onPress={() => void takePhoto()} />
+      <Label muted>Your location is saved with the run (allow location when asked).</Label>
       <Button title="Save market run" onPress={() => save.mutate()} busy={save.isPending} disabled={place.trim().length < 2 || bad} />
     </Card>
   );
