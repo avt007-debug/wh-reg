@@ -10,7 +10,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import {
   documentTotals, formatINR, isValidGstin, purchaseLine, saleLine, splitByGst, type LineAmounts, type StockShortfall,
@@ -80,9 +80,24 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
   const [shortfalls, setShortfalls] = useState<StockShortfall[] | null>(null);
 
   const partyWord = isSale ? 'customer' : 'seller';
-  const warehouse = owner ? whs.data?.find((w) => w.id === (whId ?? whs.data?.[0]?.id)) : undefined;
-  const warehouseId = owner ? warehouse?.id : me.data?.warehouse_id ?? undefined;
-  const whState = owner ? warehouse?.state_code : me.data?.warehouse_state;
+  // Sales: owner AND employees choose the dispatch warehouse (stock is reduced there).
+  // Purchases: owner chooses; employees enter for their own warehouse.
+  const pickWh = owner || isSale;
+  const defaultWh = owner ? whs.data?.[0]?.id : me.data?.warehouse_id ?? whs.data?.[0]?.id;
+  const warehouse = pickWh ? whs.data?.find((w) => w.id === (whId ?? defaultWh)) : undefined;
+  const warehouseId = pickWh ? warehouse?.id : me.data?.warehouse_id ?? undefined;
+  const whState = pickWh ? warehouse?.state_code : me.data?.warehouse_state;
+
+  // When the dispatch warehouse changes, refresh "In stock" on lines already added.
+  useEffect(() => {
+    if (!isSale || !warehouseId || !lines.length) return;
+    let live = true;
+    void Promise.all(lines.map((l) => rpc<ProductHit[]>('find_material', { p_code: l.product.sku_code, lim: 1, p_warehouse: warehouseId })
+      .then((r) => (r[0]?.id === l.product.id ? Number(r[0].qty_on_hand) : null), () => null)))
+      .then((qs) => { if (live) setLines((ls) => ls.map((l, i) => (qs[i] != null && ls.length === qs.length ? { ...l, product: { ...l.product, qty_on_hand: qs[i]! } } : l))); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseId, lines.length]);
   const gstin = newGstin.trim().toUpperCase();
   const gstinOk = !gstin || isValidGstin(gstin);
   const partyState = partyMode === 'New' ? (gstin && gstinOk ? gstin.slice(0, 2) : null) : party?.state_code ?? null;
@@ -119,7 +134,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
       if (isSale) {
         const r = await rpc<{ dispatch: { invoice_no: string; grand_total: number } }>('create_dispatch', {
           p: {
-            clientTxnId: txnId, warehouseId: owner ? warehouseId : undefined,
+            clientTxnId: txnId, warehouseId,
             invoiceDate: owner ? toIso(invoiceDate) ?? undefined : undefined, invoiceNo: invoiceNo.trim() || undefined,
             customerId: partyMode === 'Existing' ? party?.id : undefined, newCustomer: partyJson,
             loadingCharges: num(loading), transportCharges: num(transport), otherCharges: num(other), overrideId,
@@ -179,21 +194,22 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
   const chargesOk = [loading, transport, other].every((c) => c.trim() === '' || num(c) >= 0);
   const headerOk = isSale ? invoiceNo.trim().length <= 16 && (!owner || !!toIso(invoiceDate))
     : invoiceNo.trim().length > 0 && !!toIso(invoiceDate);
-  const valid = partyOk && linesOk && chargesOk && headerOk && (!owner || !!warehouse);
+  const valid = partyOk && linesOk && chargesOk && headerOk && (!pickWh || !!warehouse);
 
   return (
     <View style={{ gap: 12 }}>
       <Card title={isSale ? 'Bill' : "Seller's bill"}>
-        {owner ? (
+        {pickWh ? (
           <>
-            <Label>Warehouse</Label>
+            <Label>{isSale ? 'Dispatch from warehouse' : 'Warehouse'}</Label>
             <Chips options={(whs.data ?? []).map((w) => w.id)} value={warehouse?.id ?? null} onChange={setWhId}
-              format={(v) => whs.data?.find((w) => w.id === v)?.name ?? v} />
+              format={(v) => { const w = whs.data?.find((x) => x.id === v); return w ? `${w.name} (${w.code})` : v; }} />
+            {isSale ? <Label muted>Stock is reduced in {warehouse?.name ?? 'this warehouse'} and the bill number uses its series ({warehouse?.code ?? '…'}/…).</Label> : null}
           </>
         ) : <Label muted>{me.data?.warehouse_name}</Label>}
         <Field label={isSale ? 'Invoice number (leave blank for automatic)' : "Seller's invoice number"} value={invoiceNo}
           onChangeText={(v) => setInvoiceNo(v.toUpperCase())} autoCapitalize="characters" maxLength={isSale ? 16 : 40}
-          placeholder={isSale ? 'e.g. CTR-101' : 'as printed on the bill'} />
+          placeholder={isSale ? `e.g. ${warehouse?.code ?? 'CTR'}-101` : 'as printed on the bill'} />
         {owner || !isSale ? (
           <Field label="Invoice date (DD-MM-YYYY)" value={invoiceDate} onChangeText={setInvoiceDate}
             error={invoiceDate && !toIso(invoiceDate) ? 'Use DD-MM-YYYY' : undefined} />
@@ -232,7 +248,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
                 <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{i + 1}. {l.product.name}</Text>
                 <Label muted>Material No. {l.product.sku_code}{l.product.brand ? ` · ${l.product.brand}` : ''}</Label>
                 {l.product.specification ? <Label muted>{l.product.specification}</Label> : null}
-                {isSale ? <Label muted>In stock: {Number(l.product.qty_on_hand)} {l.product.uoms.find((u) => Number(u.factor) === 1)?.code ?? 'PCS'}</Label> : null}
+                {isSale ? <Label muted>In stock at {warehouse?.name ?? 'this warehouse'}: {Number(l.product.qty_on_hand)} {l.product.uoms.find((u) => Number(u.factor) === 1)?.code ?? 'PCS'}</Label> : null}
                 <GstTag rate={l.gstRate} />
               </View>
               <SmallButton title="Remove" kind="danger" onPress={() => setLines((ls) => ls.filter((_, j) => j !== i))} />
@@ -257,7 +273,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
           </Card>
         );
       })}
-      <MaterialEntry onPick={addProduct} onCreateNew={(c) => setCreating(c)} showPrice={isSale} />
+      <MaterialEntry warehouseId={isSale ? warehouseId : undefined} warehouseName={isSale ? warehouse?.name : undefined} onPick={addProduct} onCreateNew={(c) => setCreating(c)} showPrice={isSale} />
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         <View style={{ flex: 1, minWidth: 200 }}><Button title="Search items by name" icon="search" kind="secondary" onPress={() => setPicking(true)} /></View>
         <View style={{ flex: 1, minWidth: 200 }}><Button title="New item / company / category" icon="add-circle-outline" kind="secondary" onPress={() => setCreating('')} /></View>
@@ -300,7 +316,7 @@ export function BillForm({ kind, owner = false, onSaved }: { kind: Kind; owner?:
       <ItemPicker visible={picking} onClose={() => setPicking(false)} onPick={addProduct} />
       <NewItemSheet visible={creating != null} initialCode={creating ?? ''} onClose={() => setCreating(null)} onCreated={addProduct} forPurchase={!isSale} />
       {isSale ? (
-        <OverridePinSheet shortfalls={shortfalls} warehouseId={owner ? warehouseId : undefined}
+        <OverridePinSheet shortfalls={shortfalls} warehouseId={pickWh ? warehouseId : undefined}
           onCancel={() => setShortfalls(null)} onApproved={(id) => save.mutate(id)} />
       ) : null}
     </View>

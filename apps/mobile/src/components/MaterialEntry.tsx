@@ -13,17 +13,19 @@ import type { ProductHit } from '../api/types';
 import { useTheme } from '../theme';
 import { Card, Label, SmallButton } from './ui';
 
-export function MaterialEntry({ onPick, onCreateNew, showPrice = true }: { onPick: (p: ProductHit) => void; onCreateNew?: (code: string) => void; showPrice?: boolean }) {
+export function MaterialEntry({ onPick, onCreateNew, showPrice = true, warehouseId, warehouseName }: {
+  onPick: (p: ProductHit) => void; onCreateNew?: (code: string) => void; showPrice?: boolean; warehouseId?: string; warehouseName?: string;
+}) {
   const t = useTheme();
   const [code, setCode] = useState('');
   const [dq, setDq] = useState('');
   useEffect(() => { const id = setTimeout(() => setDq(code.trim().toUpperCase()), 200); return () => clearTimeout(id); }, [code]);
   const hits = useQuery({
-    queryKey: ['material', dq], enabled: dq.length >= 2, staleTime: 60_000,
-    queryFn: () => rpc<ProductHit[]>('find_material', { p_code: dq, lim: 8 }),
+    queryKey: ['material', dq, warehouseId ?? null], enabled: dq.length >= 2, staleTime: 60_000,
+    queryFn: () => rpc<ProductHit[]>('find_material', { p_code: dq, lim: 8, ...(warehouseId ? { p_warehouse: warehouseId } : {}) }),
   });
   const list = dq.length >= 2 ? hits.data ?? [] : [];
-  const exact = list.find((p) => p.sku_code === dq);
+  const exact = list.find((p) => p.sku_code === dq || (p.aliases ?? []).some((a) => a.toUpperCase() === dq));
   const pick = (p: ProductHit) => { onPick(p); setCode(''); setDq(''); };
 
   return (
@@ -48,9 +50,9 @@ export function MaterialEntry({ onPick, onCreateNew, showPrice = true }: { onPic
           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1,
             borderColor: p.sku_code === dq ? t.good : t.border, backgroundColor: pressed ? t.accentSoft : t.card })}>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ color: t.text, fontWeight: '800' }}>{p.sku_code} <Text style={{ fontWeight: '500' }}>· {p.name}</Text></Text>
+            <Text style={{ color: t.text, fontWeight: '800' }}>{p.sku_code} <Text style={{ fontWeight: '500' }}>· {p.name}</Text>{p.aliases?.length ? <Text style={{ color: t.textMuted, fontWeight: '500' }}> (old code {p.aliases.join(', ')})</Text> : null}</Text>
             <Text style={{ color: t.textMuted, fontSize: 12.5 }}>
-              {[p.brand, p.hsn_code && `HSN ${p.hsn_code}`, `GST ${Number(p.default_gst_rate)}%`, p.specification, `In stock ${Number(p.qty_on_hand)}`].filter(Boolean).join(' · ')}
+              {[p.brand, p.hsn_code && `HSN ${p.hsn_code}`, `GST ${Number(p.default_gst_rate)}%`, p.specification, `In stock${warehouseName ? ` at ${warehouseName}` : ''} ${Number(p.qty_on_hand)}`].filter(Boolean).join(' · ')}
             </Text>
           </View>
           {showPrice && p.default_selling_price != null ? (

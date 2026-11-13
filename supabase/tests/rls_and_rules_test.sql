@@ -270,8 +270,8 @@ BEGIN
 END $$;
 SELECT t.throws($$SELECT public.request_stock_override('246810', 'x')$$, 'WH003',
                 'PIN locked after 5 wrong attempts in 15 minutes (even the right PIN)');
-SELECT t.throws($$SELECT app.request_stock_override('246810', 'a0000000-0000-0000-0000-000000000001', 'x')$$, 'WH002',
-                'cannot request an override for another warehouse');
+SELECT t.throws($$SELECT app.request_stock_override('246810', gen_random_uuid(), 'x')$$, 'WH005',
+                'override needs a real warehouse (any warehouse may be chosen for a sale)');
 
 -- =============================================================================
 \echo '── Owner'
@@ -645,6 +645,37 @@ SELECT t.throws($$SELECT public.create_item('{"skuCode":"JKF-203","name":"bad pa
 SELECT t.throws($$SELECT public.owner_save_product('{"id":"00000000-0000-0000-0000-000000000000","skuCode":"X1","name":"x","hsnCode":"8203"}')$$, 'WH002', 'editing items stays owner-only');
 :AS_ANON
 SELECT t.throws($$SELECT public.add_company('Hacker Co')$$, '42501', 'anonymous cannot add companies');
+
+\echo '── Sale dispatched from a chosen warehouse'
+:AS_OWNER
+SELECT public.owner_set_stock(:WHB, (SELECT id FROM products WHERE sku_code = 'TAK002'), 50, 'OPENING', 'test') \g /dev/null
+:AS_EMPA
+SELECT t.ok((public.find_material('TAK002', 1, :WHB)->0->>'qty_on_hand')::numeric = 50, 'Material No. box shows stock of the chosen warehouse');
+SELECT t.ok(jsonb_array_length(public.check_dispatch(jsonb_build_object('warehouseId', :WHB, 'lines', jsonb_build_array(
+  jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAK002'), 'uomCode', 'PCS', 'qty', 10))))->'shortfalls') = 0,
+  'stock check uses the chosen (other) warehouse');
+SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(), 'warehouseId', :WHB,
+  'customerId', (SELECT id FROM customers LIMIT 1), 'transportMode', 'CUSTOMER_PICKUP',
+  'lines', jsonb_build_array(jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAK002'),
+           'uomCode', 'PCS', 'qty', 10, 'unitBasePrice', 480)))) -> 'dispatch' AS dx \gset
+SELECT t.ok(:'dx'::jsonb->>'invoice_no' LIKE 'WHB/%', 'employee of WHA bills from WHB: WHB invoice series');
+RESET ROLE;
+SELECT t.ok((SELECT qty_on_hand FROM inventory_levels il JOIN products p ON p.id = il.product_id WHERE p.sku_code = 'TAK002' AND il.warehouse_id = :WHB) = 40
+            AND NOT EXISTS (SELECT 1 FROM inventory_levels il JOIN products p ON p.id = il.product_id WHERE p.sku_code = 'TAK002' AND il.warehouse_id = :WHA AND il.qty_on_hand <> 0),
+            'stock reduced in WHB, not in the employee''s own warehouse');
+SELECT t.ok((SELECT warehouse_id FROM dispatches WHERE invoice_no = :'dx'::jsonb->>'invoice_no') = :WHB, 'bill records the dispatch warehouse');
+:AS_EMPA
+SELECT t.throws(format($$SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(), 'warehouseId', %L,
+  'customerId', (SELECT id FROM customers LIMIT 1), 'transportMode', 'CUSTOMER_PICKUP',
+  'lines', jsonb_build_array(jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAK002'),
+           'uomCode', 'PCS', 'qty', 100, 'unitBasePrice', 480))))$$, :WHB), 'WH001', 'over-stock in the chosen warehouse still blocked');
+SELECT t.throws($$SELECT public.create_dispatch(jsonb_build_object('clientTxnId', gen_random_uuid(), 'warehouseId', gen_random_uuid(),
+  'customerId', (SELECT id FROM customers LIMIT 1), 'lines', '[]'::jsonb))$$, 'WH005', 'unknown warehouse refused');
+SELECT t.ok(EXISTS (SELECT 1 FROM dispatches WHERE invoice_no = :'dx'::jsonb->>'invoice_no'), 'employee still sees today''s own bill from the other warehouse');
+RESET ROLE;
+INSERT INTO product_aliases(product_id, alias) SELECT id, 'OLDTAK2' FROM products WHERE sku_code = 'TAK002';
+:AS_EMPA
+SELECT t.ok(public.find_material('oldtak2')->0->>'sku_code' = 'TAK002', 'old code (alias) finds the item');
 
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
