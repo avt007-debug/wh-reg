@@ -1040,6 +1040,7 @@ SELECT public.record_customer_payment(jsonb_build_object('customerId', (SELECT i
 SELECT t.ok(jsonb_array_length(public.my_day()->'payments') >= 1, 'My Day lists payments collected today');
 :AS_OWNER
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_activity(300)) x WHERE x->>'text' ILIKE '%insert%'), 'activity log has no raw "insert" lines');
+SELECT t.ok(EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_activity(300)) x WHERE x->>'text' LIKE 'Clocked out automatically%'), 'automatic clock-outs are labelled in the activity log');
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

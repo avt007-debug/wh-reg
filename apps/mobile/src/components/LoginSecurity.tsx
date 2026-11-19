@@ -127,7 +127,7 @@ export function LoginSecurity() {
 
       <Text style={{ color: t.text, fontWeight: '700' }}>Login history</Text>
       {(d?.events ?? []).slice(0, showAll ? 60 : 10).map((e) => (
-        <Row key={e.id} left={`${e.success ? '✓' : '✕'} ${e.full_name ?? e.login_id}`}
+        <Row key={e.id} left={`${e.success ? '✓' : e.note === 'UNLOCKED' ? '🔓' : '✕'} ${e.full_name ?? e.login_id}`}
           sub={`${dateTimeIST(e.created_at)}${e.device_name ? ` · ${e.device_name}` : ''}${e.note ? ` · ${NOTE[e.note] ?? e.note}` : !e.success ? ' · wrong password' : ''}`} />
       ))}
       {(d?.events.length ?? 0) > 10 ? <SmallButton title={showAll ? 'Show less' : 'Show more'} onPress={() => setShowAll(!showAll)} /> : null}

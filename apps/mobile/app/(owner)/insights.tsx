@@ -19,15 +19,17 @@ export default function Insights() {
       <Card title="Margin spread by category (this month)">
         {margins.data?.map((m) => (
           <Row key={m.category} left={m.category}
-            sub={`Avg landed ${formatINR(m.avg_cost_per_unit)} → avg sold ${formatINR(m.avg_price_per_unit)} per unit`}
-            right={`${m.margin_pct ?? 0}%`} />
+            sub={Number(m.avg_cost_per_unit) > 0
+              ? `Avg landed ${formatINR(m.avg_cost_per_unit)} → avg sold ${formatINR(m.avg_price_per_unit)} per unit`
+              : `Avg sold ${formatINR(m.avg_price_per_unit)} per unit · no purchase cost yet (only opening stock), so margin is unknown`}
+            right={Number(m.avg_cost_per_unit) > 0 ? `${m.margin_pct ?? 0}%` : '—'} />
         ))}
       </Card>
       <Card title="Staff performance (this month)">
         {perf.data?.staff.map((s, _i, all) => (
           <HBar key={s.user_id} label={`${s.full_name} · ${s.warehouse_code ?? '—'}`} value={s.revenue_excl_gst}
             max={Math.max(...all.map((x) => x.revenue_excl_gst))} display={formatINR(s.revenue_excl_gst)}
-            sub={`${s.invoices} invoices · margin ${formatINR(s.gross_margin)} · ${s.inward_entries} inwards · ${s.overrides_used} overrides`} />
+            sub={`${s.invoices} invoices · ${Number(s.gross_margin) >= Number(s.revenue_excl_gst) && Number(s.revenue_excl_gst) > 0 ? 'margin unknown (no purchase cost yet)' : `margin ${formatINR(s.gross_margin)}`} · ${s.inward_entries} inwards · ${s.overrides_used} overrides`} />
         ))}
       </Card>
       <Card title="Sales agents">

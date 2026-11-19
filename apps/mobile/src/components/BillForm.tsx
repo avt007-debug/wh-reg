@@ -317,7 +317,8 @@ export function BillForm({ kind, owner = false, onSaved, editOf }: { kind: Kind;
         ) : editOf ? null : <Label muted>{me.data?.warehouse_name}</Label>}
         {editOf ? null : <Field label={isSale ? 'Invoice number (leave blank for automatic)' : "Seller's invoice number"} value={invoiceNo}
           onChangeText={(v) => setInvoiceNo(v.toUpperCase())} autoCapitalize="characters" maxLength={isSale ? 16 : 40}
-          placeholder={isSale ? `e.g. ${warehouse?.code ?? 'CTR'}-101` : 'as printed on the bill'} />}
+          placeholder={isSale ? `e.g. ${warehouse?.code ?? 'CTR'}-101` : 'as printed on the bill'}
+          error={isSale && invoiceNo.trim() && !invoiceNo.trim().startsWith(`${warehouse?.code ?? ''}`) ? `Not in the automatic ${warehouse?.code ?? ''}/… series. GST needs one continuous series — leave blank unless you are copying an old paper bill.` : undefined} />}
         {owner || !isSale ? (
           <Field label="Invoice date (DD-MM-YYYY)" value={invoiceDate} onChangeText={setInvoiceDate}
             error={invoiceDate && !toIso(invoiceDate) ? 'Use DD-MM-YYYY' : undefined} />
@@ -386,7 +387,13 @@ export function BillForm({ kind, owner = false, onSaved, editOf }: { kind: Kind;
             <Field label="HSN code" value={l.hsn} keyboardType="number-pad" maxLength={8} onChangeText={(v) => update(i, { hsn: v.replace(/\D/g, '') })}
               error={l.hsn && !/^[0-9]{4}([0-9]{2}){0,2}$/.test(l.hsn) ? '4, 6 or 8 digits' : undefined} />
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Field label={`Price / ${l.uomCode} excl. GST`} keyboardType="decimal-pad" value={l.price} onChangeText={(v) => update(i, { price: v })} />
+              <Field label={`Price / ${l.uomCode} excl. GST`} keyboardType="decimal-pad" value={l.price} onChangeText={(v) => update(i, { price: v })}
+                error={(() => {
+                  // catch typing slips like ₹60 for a ₹1,000 item: price under half the list price for this pack
+                  const f = Number(l.product.uoms.find((u) => u.code === l.uomCode)?.factor ?? 1);
+                  const list = Number(l.product.default_selling_price ?? 0) * f;
+                  return isSale && list > 0 && num(l.price) > 0 && num(l.price) < list / 2 ? `Below half the list price (${formatINR(list)}) — check the amount` : undefined;
+                })()} />
               <Field label="Discount %" keyboardType="decimal-pad" value={l.discPct} onChangeText={(v) => update(i, { discPct: v })} placeholder="0"
                 error={!pctOk(l.discPct) ? '0–100' : undefined} />
             </View>
