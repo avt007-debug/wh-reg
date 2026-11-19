@@ -1,5 +1,6 @@
 import { TextSize } from '../../src/components/TextSize';
 import { MyAccount } from '../../src/components/MyAccount';
+import { PhoneNotifications } from '../../src/components/PhoneNotifications';
 import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
@@ -37,6 +38,7 @@ export default function MyDay() {
         {q.data?.runs?.map((r) => <Row key={r.id} left={r.place} right={`${r.visits} shop(s)`} />)}
       </Card>
       <Label muted>Entries are locked once saved. Ask the owner to cancel a wrong entry, then re-enter it.</Label>
+      <PhoneNotifications what="your clock-in and clock-out reminders and replies from the owner" />
       <MyAccount />
       <Card title="Appearance" icon="color-palette-outline" subtitle="Day, Auto (follows your phone) or Night"><ThemeSwitch /></Card>
       <TextSize />

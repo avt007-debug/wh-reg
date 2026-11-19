@@ -581,6 +581,24 @@ SELECT t.ok((public.owner_purchase_detail((:'op'::jsonb->>'id')::uuid)->>'credit
             AND (public.owner_purchase_detail((:'op'::jsonb->>'id')::uuid)->>'grand_total')::numeric = 252.40,
             'editing keeps credit % and discount %: (₹200 − 10%) + 18% + loading ₹40 = ₹252.40; credit 5% of ₹180 = ₹9');
 
+\echo '── Phone notifications (web push)'
+:AS_EMPA
+SELECT t.ok((public.save_push_subscription(jsonb_build_object('endpoint', 'https://fcm.googleapis.com/fcm/send/test-1', 'p256dh', 'BPk', 'auth', 'xyz', 'device', 'Android · Chrome'))->'devices'->0->>'device') = 'Android · Chrome',
+            'employee turns on phone notifications');
+SELECT t.throws($$SELECT public.save_push_subscription('{"endpoint":"http://evil/x","p256dh":"a","auth":"b"}')$$, 'WH005', 'only https push endpoints are accepted');
+SELECT t.throws($$SELECT public.push_claim(10)$$, '42501', 'staff cannot read the push queue');
+SELECT t.throws($$SELECT * FROM push_subscriptions$$, '42501', 'push subscriptions are not readable directly');
+SELECT public.send_test_push();
+:AS_SERVICE
+SELECT t.ok((SELECT count(*) FROM jsonb_array_elements(public.push_claim(50)) x
+              WHERE x->>'kind' = 'TEST' AND x->'subs'->0->>'endpoint' = 'https://fcm.googleapis.com/fcm/send/test-1') = 1,
+            'the relay gets the test notification with the phone to send it to');
+SELECT t.ok(jsonb_array_length(public.push_claim(50)) = 0, 'a notification is handed to the relay only once');
+SELECT public.push_report(jsonb_build_array(jsonb_build_object('subId', (SELECT id FROM push_subscriptions WHERE endpoint LIKE '%test-1'), 'ok', false, 'gone', true)));
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM push_subscriptions WHERE endpoint LIKE '%test-1'), 'an uninstalled phone (410 Gone) is removed');
+:AS_OWNER
+SELECT t.ok(jsonb_typeof(public.owner_push_overview()) = 'array', 'owner sees who has phone notifications on');
+
 \echo '── Customer ledger & payments'
 :AS_OWNER
 SELECT id AS lc FROM customers WHERE name = 'Charges Test' \gset

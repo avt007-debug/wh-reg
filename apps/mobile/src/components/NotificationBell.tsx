@@ -23,7 +23,7 @@ const ICON: Record<string, IconName> = {
 };
 
 /** Where tapping a notification takes the person. */
-function target(kind: string, owner: boolean): string | null {
+export function target(kind: string, owner: boolean): string | null {
   const O = (p: string) => `/(owner)/${p}`; const S = (p: string) => `/(staff)/${p}`;
   if (kind === 'CLOCK_IN_REMINDER' || kind === 'CLOCK_OUT_REMINDER') return owner ? O('employees') : S('work');
   if (kind === 'AUTO_CLOCK_OUT' || kind === 'LEAVE_DECISION' || kind === 'CLOCK_FIX_DECISION') return owner ? O('employees') : S('requests');

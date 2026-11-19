@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
+import { PhoneNotifications } from '../../src/components/PhoneNotifications';
 import { Button, Card, Empty, glass, Label, Notice, Progress, Screen, Section, SmallButton, Stat, type IconName } from '../../src/components/ui';
 import { dmy, hoursLabel, monthLong, monthStart, timeIST } from '../../src/lib/dates';
 import { notify } from '../../src/lib/dialogs';
@@ -81,6 +82,7 @@ export default function Home() {
         </Text>
       </View>
 
+      <PhoneNotifications compact what="your 9 AM clock-in and evening clock-out reminders" />
       <QuickLinks />
 
       {/* ---------------- Today */}

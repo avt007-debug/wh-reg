@@ -4,6 +4,7 @@ import type { Me } from '../api/types';
 import { rpc } from '../api/client';
 import { deviceId, deviceName, forgetId, rememberId, userAgent } from '../lib/device';
 import { queryClient } from '../lib/queryClient';
+import { disablePush, refreshPushOwner } from '../lib/push';
 import { loginEmail, supabase } from '../lib/supabase';
 
 export interface SessionUser { id: string; fullName: string; role: Role; warehouseId: string | null; loginId: string }
@@ -99,8 +100,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     }
     rememberId(id);
     set({ user, access, notice: null, locked: false });
+    void refreshPushOwner();
   },
   async signOut(notice = null) {
+    await disablePush();                                     // this phone stops getting their notifications
     await supabase.auth.signOut().catch(() => undefined);   // still log out locally if offline
     queryClient.clear();
     set({ user: null, access: null, notice, locked: false });

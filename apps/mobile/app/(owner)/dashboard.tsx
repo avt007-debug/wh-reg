@@ -4,6 +4,7 @@ import { View } from 'react-native';
 import { formatINR } from '@wh/shared';
 import { rpc } from '../../src/api/client';
 import { Card, Chips, Empty, HBar, Notice, Screen, Section, SmallButton, Stat, Toolbar } from '../../src/components/ui';
+import { PhoneNotifications } from '../../src/components/PhoneNotifications';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/store';
 import { WarehouseBars, type TrendPoint } from '../../src/components/WarehouseBars';
@@ -83,6 +84,7 @@ export default function Dashboard() {
 
   return (
     <Screen>
+      <PhoneNotifications compact what="the 8 PM daily summary and alerts" />
       <View style={{ gap: 2 }}>
         <Text style={{ color: t.text, fontSize: 20, fontWeight: '800' }}>{greet}{name ? `, ${name.split(' ')[0]}` : ''}</Text>
         <Text style={{ color: t.textMuted }}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })} · showing {whName}</Text>

@@ -11,6 +11,7 @@ import { StaffAdmin } from '../../src/components/StaffAdmin';
 import { Button, Card, Field, Label, Screen, Section, ThemeSwitch } from '../../src/components/ui';
 import { WarehouseAdmin } from '../../src/components/WarehouseAdmin';
 import { ReminderSettings } from '../../src/components/ReminderSettings';
+import { PhoneNotifications } from '../../src/components/PhoneNotifications';
 import { MyAccount } from '../../src/components/MyAccount';
 import { LoginSecurity, RecoveryCodes } from '../../src/components/LoginSecurity';
 import { notify } from '../../src/lib/dialogs';
@@ -64,6 +65,7 @@ function ManagerOnlyHidden() {
         <Button title="Save PIN" onPress={() => savePin.mutate()} busy={savePin.isPending} disabled={!/^\d{6,8}$/.test(pin)} />
       </Card>
 
+      <PhoneNotifications what="the 8 PM daily summary, purchases waiting for approval, leave requests and login alerts" />
       <ReminderSettings />
     </>
   );

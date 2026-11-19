@@ -11,6 +11,9 @@ import { SessionGuard } from '../src/components/SessionGuard';
 import { UpdateBanner } from '../src/components/UpdateBanner';
 import { OfflineQueue } from '../src/components/OfflineQueue';
 import { applyScale, useTextSize } from '../src/lib/textSize';
+import { registerServiceWorker } from '../src/lib/push';
+import { target } from '../src/components/NotificationBell';
+import { useRouter } from 'expo-router';
 
 
 /**
@@ -46,6 +49,25 @@ function Navigator() {
   );
 }
 
+/** Tapping a phone notification opens the app on the right page (clock in, summary, approvals …). */
+function PushOpener() {
+  const router = useRouter();
+  const user = useAuth((s) => s.user);
+  const owner = isOwner(user);
+  useEffect(() => { void registerServiceWorker(); }, []);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !user || typeof window === 'undefined') return;
+    const go = (kind: string) => { const to = target(kind, owner); if (to) setTimeout(() => router.navigate(to as never), 900); };
+    const qs = new URLSearchParams(window.location.search);
+    const k = qs.get('open');
+    if (k) { window.history.replaceState(null, '', window.location.pathname); go(k); }
+    const onMsg = (e: MessageEvent) => { if (e.data?.type === 'open-notification' && e.data.kind) go(String(e.data.kind)); };
+    navigator.serviceWorker?.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
+  }, [user, owner, router]);
+  return null;
+}
+
 /** Keeps the phone status bar and the browser page colour in step with Day / Night mode. */
 function ThemeChrome() {
   const t = useTheme();
@@ -67,6 +89,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <ThemeChrome />
       <Navigator />
+      <PushOpener />
       <UpdateBanner />
       <OfflineQueue />
       <SessionGuard />
