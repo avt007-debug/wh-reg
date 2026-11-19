@@ -1,6 +1,6 @@
 /**
  * Bell in every page header: reminders (clock in / clock out), the owner's daily summary,
- * purchase approvals, leave decisions … Everything that is sent on WhatsApp also lands here.
+ * purchase approvals, leave decisions … The same messages arrive as phone notifications (push-relay).
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

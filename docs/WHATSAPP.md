@@ -1,5 +1,11 @@
 # WhatsApp Notification Engine (Supabase Edge Functions + Meta Cloud API)
 
+> **Switched off on 19-Nov-2026 (owner's decision).** Reminders and the owner's daily summary are sent as
+> phone notifications from the installed app (web push, `push-relay`) and the bell. Nothing is queued for
+> WhatsApp while `app_settings.whatsapp.enabled` is false (trigger `notification_outbox_gate`). To bring it
+> back: complete the steps below, then `UPDATE app_settings SET value = '{"enabled": true}' WHERE key = 'whatsapp';`
+> and re-schedule `whreg-whatsapp-retry`.
+
 ## How it works
 
 ```mermaid

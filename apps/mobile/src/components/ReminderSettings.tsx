@@ -1,29 +1,23 @@
 /**
- * Owner settings for the automatic messages (WhatsApp is used only for the owner's daily summary;
- * reminders go to employees as phone notifications + the app's bell):
+ * Owner settings for the automatic phone notifications (also shown in the app's bell):
  * clock-in reminder, clock-out reminder, owner's daily summary; working days; extra owner numbers.
- * Also the delivery log of the latest WhatsApp messages.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { rpc } from '../api/client';
 import { notify } from '../lib/dialogs';
-import { dateTimeIST } from '../lib/dates';
 import { useTheme } from '../theme';
-import { Button, Card, Chips, Field, Label, Notice, Row, SmallButton } from './ui';
+import { Button, Card, Chips, Field, Label, SmallButton } from './ui';
 
 interface Job { enabled: boolean; time: string }
 interface Settings {
   clock_in: Job; clock_out: Job; summary: Job; work_days: number[]; summary_every_day: boolean; owner_numbers: string[];
   resolved_owner_numbers: string[]; employees_without_phone: string[]; whatsapp_connected: boolean;
 }
-interface OutboxRow { id: number; event_type: string; kind: string | null; person: string | null; status: string; last_error: string | null; created_at: string; sent_to_numbers: string[] | null }
 
 const DAYS = [1, 2, 3, 4, 5, 6, 7] as const;
 const DAY = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const KIND: Record<string, string> = { CLOCK_IN_REMINDER: 'Clock-in reminder', CLOCK_OUT_REMINDER: 'Clock-out reminder', DAILY_SUMMARY: 'Daily summary' };
-const STATUS: Record<string, string> = { PENDING: 'Waiting', SENDING: 'Sending', SENT: 'Sent', DELIVERED: 'Delivered ✓', FAILED: 'Retrying', DEAD: 'Failed' };
 const to12 = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return `${((h! + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h! < 12 ? 'AM' : 'PM'}`; };
 
 function JobRow({ title, hint, job, onChange }: { title: string; hint: string; job: Job; onChange: (j: Job) => void }) {
@@ -56,36 +50,31 @@ export function ReminderSettings() {
   const t = useTheme();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['notif-settings'], queryFn: () => rpc<Settings>('owner_notification_settings') });
-  const log = useQuery({ queryKey: ['outbox'], queryFn: () => rpc<OutboxRow[]>('owner_notifications', { p_limit: 15 }), refetchInterval: 60_000 });
   const [s, setS] = useState<Settings | null>(null);
-  const [extra, setExtra] = useState('');
-  useEffect(() => { if (q.data) { setS(q.data); setExtra((q.data.owner_numbers ?? []).join(', ')); } }, [q.data]);
+  useEffect(() => { if (q.data) setS(q.data); }, [q.data]);
 
   const save = useMutation({
     mutationFn: () => rpc<Settings>('owner_save_notification_settings', { p: {
       clock_in: s!.clock_in, clock_out: s!.clock_out, summary: s!.summary, work_days: s!.work_days,
-      summary_every_day: s!.summary_every_day, owner_numbers: extra.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean),
+      summary_every_day: s!.summary_every_day, owner_numbers: s!.owner_numbers ?? [],
     } }),
     onSuccess: (d) => { qc.setQueryData(['notif-settings'], d); notify('Saved', 'Reminder settings updated'); },
     onError: (e) => notify('Not saved', e instanceof Error ? e.message : String(e)),
   });
   const sendNow = useMutation({
-    mutationFn: () => rpc<{ queued: boolean }>('owner_send_summary_now'),
-    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['outbox'] });
-      notify(r.queued ? 'Summary queued' : 'No WhatsApp number', r.queued ? 'It goes out as soon as WhatsApp is connected.' : 'Add your mobile number to your login (Staff logins → Edit) or below.'); },
+    mutationFn: () => rpc<{ queued: boolean; text: string }>('owner_send_summary_now'),
+    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['notifications'] });
+      notify('Summary sent', `${r.text}\n\nIt is in the bell, and on your phone if notifications are turned on.`); },
     onError: (e) => notify('Could not send', e instanceof Error ? e.message : String(e)),
   });
 
   if (!s) return <Card title="Reminders & daily summary" icon="alarm-outline"><Label muted>Loading…</Label></Card>;
   return (
     <Card title="Reminders & daily summary" icon="alarm-outline"
-      subtitle="Reminders reach employees as phone notifications and in the app's bell. Only your daily summary goes on WhatsApp.">
-      {!s.whatsapp_connected ? (
-        <Notice tone="warning">WhatsApp is not connected yet, so your daily summary appears only in the app (and as a phone notification) for now. Once your Meta WhatsApp Business number is connected it also goes out on WhatsApp.</Notice>
-      ) : <Notice tone="good">WhatsApp is connected — messages are being delivered.</Notice>}
+      subtitle="Sent as phone notifications from the WH Reg app and shown in the bell. Each person turns notifications on once on their phone.">
       <JobRow title="Clock-in reminder" hint="Phone notification to employees who have not clocked in yet" job={s.clock_in} onChange={(j) => setS({ ...s, clock_in: j })} />
       <JobRow title="Clock-out reminder" hint="Phone notification to employees still clocked in" job={s.clock_out} onChange={(j) => setS({ ...s, clock_out: j })} />
-      <JobRow title="Daily summary to owner" hint="On WhatsApp and as a phone notification: sales (to whom), purchases (from whom), attendance, market runs" job={s.summary} onChange={(j) => setS({ ...s, summary: j })} />
+      <JobRow title="Daily summary to owner" hint="Phone notification to you: sales, money collected, purchases (and how many to approve), attendance, market runs, top customer" job={s.summary} onChange={(j) => setS({ ...s, summary: j })} />
       <Label>Working days (reminders are sent only on these days)</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {DAYS.map((d) => {
@@ -101,17 +90,9 @@ export function ReminderSettings() {
       <Label>Daily summary on</Label>
       <Chips options={['every', 'work'] as const} value={s.summary_every_day ? 'every' : 'work'} onChange={(v) => setS({ ...s, summary_every_day: v === 'every' })}
         format={(v) => (v === 'every' ? 'Every day' : 'Working days only')} />
-      <Field label="Extra numbers for the daily summary (optional)" value={extra} onChangeText={setExtra} keyboardType="phone-pad" placeholder="e.g. 9876543210, 9123456780" />
-      <Label muted>Summary goes to: {s.resolved_owner_numbers.length ? s.resolved_owner_numbers.map((x) => `+${x}`).join(', ') : 'nobody yet — add your mobile number to your owner login or above'}</Label>
       <Button title="Save reminder settings" icon="checkmark" onPress={() => save.mutate()} busy={save.isPending} />
       <SmallButton title="Send today's summary now" icon="paper-plane-outline" onPress={() => sendNow.mutate()} disabled={sendNow.isPending} />
 
-      <Label>Latest WhatsApp messages</Label>
-      {(log.data ?? []).map((o) => (
-        <Row key={o.id} left={`${KIND[o.kind ?? ''] ?? o.event_type.replaceAll('_', ' ').toLowerCase()}${o.person ? ` · ${o.person}` : ''}`}
-          sub={o.last_error ? `${dateTimeIST(o.created_at)} · ${o.last_error}` : dateTimeIST(o.created_at)} right={STATUS[o.status] ?? o.status} />
-      ))}
-      {!log.data?.length ? <Label muted>None yet</Label> : null}
     </Card>
   );
 }

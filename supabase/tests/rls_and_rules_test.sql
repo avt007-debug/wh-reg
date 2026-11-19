@@ -49,6 +49,10 @@ SELECT t.throws('SELECT * FROM products', '42501', 'anon cannot read the catalog
 SELECT t.throws('SELECT * FROM inventory_levels', '42501', 'anon cannot read stock');
 SELECT t.throws($$SELECT public.search_items('drill')$$, '42501', 'anon cannot call RPCs');
 
+-- the WhatsApp machinery is tested with WhatsApp switched on; the "off" behaviour is tested at the end
+RESET ROLE;
+UPDATE app_settings SET value = '{"enabled": true}' WHERE key = 'whatsapp';
+
 -- =============================================================================
 \echo '── Employee A (WHA): isolation & lockout'
 -- =============================================================================
@@ -1138,6 +1142,19 @@ UPDATE users SET is_active = false WHERE id = :EMPA;
 SELECT t.ok((SELECT count(*) FROM inventory_levels) = 0, 'deactivated user immediately sees nothing');
 RESET ROLE;
 UPDATE users SET is_active = true WHERE id = :EMPA;
+
+\echo '── WhatsApp switched off: everything as phone notifications'
+RESET ROLE;
+UPDATE app_settings SET value = '{"enabled": false}' WHERE key = 'whatsapp';
+SELECT count(*) AS ob0 FROM notification_outbox \gset
+DELETE FROM notifications WHERE dedupe_key LIKE 'summary:2026-11-18:%';
+SELECT app.run_schedules('2026-11-18 14:31:00+00') \g /dev/null
+SELECT t.ok((SELECT count(*) FROM notification_outbox) = :ob0, 'with WhatsApp off nothing is queued for WhatsApp');
+SELECT t.ok((SELECT body FROM notifications WHERE kind = 'DAILY_SUMMARY' AND dedupe_key LIKE 'summary:2026-11-18:%' LIMIT 1) LIKE 'Sales % · Collected % · Purchases % · Present %',
+            'owner gets the daily summary as a phone notification: sales, collected, purchases, present …');
+:AS_OWNER
+SELECT t.ok((public.owner_send_summary_now()->>'text') LIKE 'Sales %', '"Send today''s summary now" sends a phone notification');
+RESET ROLE;
 
 DROP SCHEMA t CASCADE;
 \echo '✓ ALL DATABASE TESTS PASSED'
