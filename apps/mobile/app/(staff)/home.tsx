@@ -17,7 +17,7 @@ import { todayIST } from '../../src/lib/ids';
 import { useTheme } from '../../src/theme';
 
 interface Shift { id: string; work_date: string; clock_in_at: string; clock_out_at: string | null; hours: number | null }
-interface Day { date: string; first_in: string | null; last_out: string | null; shifts: number; open: boolean; hours: number }
+interface Day { date: string; first_in: string | null; last_out: string | null; shifts: number; open: boolean; hours: number; off?: boolean; leave?: boolean; auto?: boolean }
 interface Stats {
   days_present: number; hours: number; missed_clock_outs: number; invoices: number; sales: number; customers_billed: number;
   purchases_entered: number; market_runs: number; places: number; customers_approached: number; orders_from_visits: number;
@@ -33,7 +33,7 @@ interface Dash {
 
 const n = (x: unknown) => Number(x ?? 0);
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const weekday = (iso: string) => WEEKDAY[new Date(`${iso}T00:00:00Z`).getUTCDay()]!;
+const weekday = (iso: string) => WEEKDAY[new Date(`${iso.slice(0, 10)}T00:00:00Z`).getUTCDay()] ?? '';
 
 export default function Home() {
   const t = useTheme();
@@ -188,13 +188,19 @@ function QuickLinks() {
   const t = useTheme();
   const router = useRouter();
   const links: { to: string; title: string; icon: IconName }[] = [
-    { to: '/outward', title: 'New sale', icon: 'arrow-up-circle' },
-    { to: '/inward', title: 'Purchase', icon: 'arrow-down-circle' },
-    { to: '/stock', title: 'Stock', icon: 'cube' },
-    { to: '/payments', title: 'Payments', icon: 'wallet' },
-    { to: '/transfers', title: 'Transfers', icon: 'swap-horizontal' },
-    { to: '/work', title: 'Clock & Visits', icon: 'time' },
-    { to: '/log', title: 'My Day', icon: 'today' },
+    // '/(staff)/…' paths: the owner area has pages with the same names (stock, transfers, customers, count)
+    { to: '/(staff)/outward', title: 'New sale', icon: 'arrow-up-circle' },
+    { to: '/(staff)/bills', title: 'My bills', icon: 'receipt' },
+    { to: '/(staff)/inward', title: 'Purchase', icon: 'arrow-down-circle' },
+    { to: '/(staff)/stock', title: 'Stock', icon: 'cube' },
+    { to: '/(staff)/payments', title: 'Payments', icon: 'wallet' },
+    { to: '/(staff)/customers', title: 'Customers', icon: 'storefront' },
+    { to: '/(staff)/plan', title: 'Visit plan', icon: 'map' },
+    { to: '/(staff)/work', title: 'Clock & Visits', icon: 'time' },
+    { to: '/(staff)/transfers', title: 'Transfers', icon: 'swap-horizontal' },
+    { to: '/(staff)/count', title: 'Stock count', icon: 'clipboard' },
+    { to: '/(staff)/requests', title: 'Leave & fixes', icon: 'mail' },
+    { to: '/(staff)/log', title: 'My Day', icon: 'today' },
   ];
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -231,21 +237,22 @@ function AttendanceTable({ days, today }: { days: Day[]; today: string }) {
         ))}
       </View>
       {days.map((day) => {
-        const sunday = weekday(day.date) === 'Sun';
+        const date = day.date.slice(0, 10);
+        const off = day.off ?? weekday(date) === 'Sun';
         const absent = !day.first_in;
-        const isToday = day.date === today;
-        const status = absent ? (isToday ? 'Not yet' : sunday ? 'Sunday' : 'Absent') : null;
+        const isToday = date === today.slice(0, 10);
+        const status = absent ? (isToday ? 'Not yet' : day.leave ? 'On leave' : off ? 'Day off' : 'Absent') : null;
         return (
           <View key={day.date} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 8, borderBottomWidth: 0.5, borderColor: t.border,
             backgroundColor: isToday ? t.accentSoft : 'transparent', borderRadius: isToday ? 8 : 0 }}>
-            <Text style={{ ...cell, flex: 1.3, fontWeight: '600' }}>{dmy(day.date).slice(0, 5)} <Text style={{ color: t.textMuted, fontWeight: '400' }}>{weekday(day.date)}</Text></Text>
+            <Text style={{ ...cell, flex: 1.3, fontWeight: '600' }}>{dmy(date).slice(0, 5)} <Text style={{ color: t.textMuted, fontWeight: '400' }}>{weekday(date)}</Text></Text>
             {status ? (
               <Text style={{ ...cell, flex: 3, color: status === 'Absent' ? t.danger : t.textMuted, fontWeight: '600' }}>{status}</Text>
             ) : (
               <>
                 <Text style={cell}>{timeIST(day.first_in)}</Text>
                 <Text style={{ ...cell, color: day.open ? (isToday ? t.good : t.warning) : t.text }}>
-                  {day.open ? (isToday ? 'Still in' : 'Missed') : timeIST(day.last_out)}
+                  {day.open ? (isToday ? 'Still in' : 'Missed') : `${timeIST(day.last_out)}${day.auto ? ' (auto)' : ''}`}
                 </Text>
                 <Text style={{ ...cell, textAlign: 'right', fontWeight: '700' }}>{hoursLabel(n(day.hours))}{day.shifts > 1 ? ` ×${day.shifts}` : ''}</Text>
               </>

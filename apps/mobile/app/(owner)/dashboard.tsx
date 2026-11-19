@@ -95,9 +95,9 @@ export default function Dashboard() {
       {toReorder ? <Notice tone="accent" icon="cart-outline">{toReorder} item(s) are at or below their reorder level.</Notice> : null}
       {nPending || toReorder || late.length ? (
         <Toolbar>
-          {nPending ? <SmallButton title="Review purchases" icon="hourglass-outline" onPress={() => router.navigate('/purchases')} /> : null}
-          {late.length ? <SmallButton title="Open ledger" icon="book-outline" onPress={() => router.navigate('/ledger')} /> : null}
-          {toReorder ? <SmallButton title="See reorder list" icon="cart-outline" onPress={() => router.navigate('/reorder')} /> : null}
+          {nPending ? <SmallButton title="Review purchases" icon="hourglass-outline" onPress={() => router.navigate('/(owner)/purchases')} /> : null}
+          {late.length ? <SmallButton title="Open ledger" icon="book-outline" onPress={() => router.navigate('/(owner)/ledger')} /> : null}
+          {toReorder ? <SmallButton title="See reorder list" icon="cart-outline" onPress={() => router.navigate('/(owner)/reorder')} /> : null}
         </Toolbar>
       ) : null}
 

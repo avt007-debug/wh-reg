@@ -24,12 +24,16 @@ const ICON: Record<string, IconName> = {
 
 /** Where tapping a notification takes the person. */
 function target(kind: string, owner: boolean): string | null {
-  if (kind === 'CLOCK_IN_REMINDER' || kind === 'CLOCK_OUT_REMINDER') return '/work';
-  if (kind === 'DAILY_SUMMARY') return owner ? '/report' : null;
-  if (kind.startsWith('PURCHASE')) return owner ? '/purchases' : '/log';
-  if (kind === 'LEAVE' || kind === 'REQUEST') return owner ? '/employees' : '/work';
-  if (kind === 'LOGIN_ALERT') return owner ? '/team' : null;
-  if (kind === 'TARGET') return owner ? '/employees' : '/home';
+  const O = (p: string) => `/(owner)/${p}`; const S = (p: string) => `/(staff)/${p}`;
+  if (kind === 'CLOCK_IN_REMINDER' || kind === 'CLOCK_OUT_REMINDER') return owner ? O('employees') : S('work');
+  if (kind === 'AUTO_CLOCK_OUT' || kind === 'LEAVE_DECISION' || kind === 'CLOCK_FIX_DECISION') return owner ? O('employees') : S('requests');
+  if (kind === 'LEAVE_REQUEST' || kind === 'CLOCK_FIX_REQUEST' || kind === 'LEAVE' || kind === 'REQUEST') return owner ? O('employees') : S('requests');
+  if (kind === 'DAILY_SUMMARY') return owner ? O('report') : null;
+  if (kind.startsWith('PURCHASE')) return owner ? O('purchases') : S('log');
+  if (kind === 'LOGIN_ALERT' || kind.startsWith('DEVICE')) return owner ? O('team') : null;
+  if (kind === 'TARGET') return owner ? O('employees') : S('home');
+  if (kind === 'VISIT_PLAN') return owner ? O('employees') : S('plan');
+  if (kind === 'STOCK_COUNT') return owner ? O('count') : S('count');
   return null;
 }
 

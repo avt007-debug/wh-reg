@@ -1041,6 +1041,11 @@ SELECT t.ok(jsonb_array_length(public.my_day()->'payments') >= 1, 'My Day lists 
 :AS_OWNER
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_activity(300)) x WHERE x->>'text' ILIKE '%insert%'), 'activity log has no raw "insert" lines');
 SELECT t.ok(EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_activity(300)) x WHERE x->>'text' LIKE 'Clocked out automatically%'), 'automatic clock-outs are labelled in the activity log');
+:AS_EMPB
+SELECT t.ok((SELECT x->>'date' = app.today_ist()::text FROM jsonb_array_elements(public.my_dashboard(date_trunc('month', app.today_ist())::date)->'days') x LIMIT 1),
+            'dashboard days are plain dates (weekday works)');
+SELECT t.ok(EXISTS (SELECT 1 FROM jsonb_array_elements(public.my_dashboard(date_trunc('month', app.today_ist() - 3)::date)->'days') x WHERE (x->>'auto')::boolean),
+            'dashboard marks days closed automatically');
 -- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================

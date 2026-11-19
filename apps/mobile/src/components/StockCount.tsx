@@ -8,7 +8,9 @@ import { Text, TextInput, View } from 'react-native';
 import { rpc } from '../api/client';
 import { isOwner, useAuth } from '../auth/store';
 import { dateTimeIST } from '../lib/dates';
-import { confirmAsk, notify } from '../lib/dialogs';
+import { askText, confirmAsk, notify } from '../lib/dialogs';
+import type { ProductHit } from '../api/types';
+import { ItemPicker } from './ItemPicker';
 import { useWarehouses } from '../lib/warehouse';
 import { useTheme } from '../theme';
 import { Button, Card, Chips, Field, Label, Notice, Row, SmallButton, Toolbar } from './ui';
@@ -30,6 +32,7 @@ export function StockCount() {
   const sheet = useQuery({ queryKey: ['count-sheet', open?.id], enabled: !!open, queryFn: () => rpc<{ items: SheetItem[] }>('stock_count_sheet', { p_count: open!.id }) });
   const [q, setQ] = useState(''); const [only, setOnly] = useState<'All' | 'Not counted' | 'Different'>('All');
   const [typed, setTyped] = useState<Record<string, string>>({});
+  const [adding, setAdding] = useState(false);
   useEffect(() => setTyped({}), [open?.id]);
   const refresh = () => { for (const k of ['stock-counts', 'count-sheet', 'owner-stock', 'stock-overview', 'inventory']) void qc.invalidateQueries({ queryKey: [k] }); };
   const fail = (e: unknown) => notify('Not saved', e instanceof Error ? e.message : String(e));
@@ -72,6 +75,7 @@ export function StockCount() {
             </Toolbar>
           ) : <Label muted>When everyone has finished, the owner applies the count.</Label>}
           <Field label="Find item (code or name)" value={q} onChangeText={setQ} autoCapitalize="none" />
+          <SmallButton icon="add" title="Count an item that is not in this list" onPress={() => setAdding(true)} />
           <Chips options={['All', 'Not counted', 'Different'] as const} value={only} onChange={setOnly} />
           {items.slice(0, 200).map((i) => {
             const v = typed[i.product_id] ?? (i.counted_qty != null ? String(Number(i.counted_qty)) : '');
@@ -92,6 +96,15 @@ export function StockCount() {
           {items.length > 200 ? <Label muted>Showing 200 — search to find others</Label> : null}
         </>
       )}
+      <ItemPicker visible={adding} onClose={() => setAdding(false)} onPick={(p: ProductHit) => {
+        setAdding(false);
+        void askText(`How many ${p.name}?`, `Count in pieces (${p.uoms.find((u) => Number(u.factor) === 1)?.code ?? 'PCS'}).`).then((v) => {
+          if (v == null || v.trim() === '') return;
+          const qty = Number(v.trim());
+          if (!Number.isFinite(qty) || qty < 0) { notify('Enter a number', 'Use 0 or more.'); return; }
+          rpc('save_count_line', { p_count: open!.id, p_product: p.id, p_qty: qty }).then(() => void qc.invalidateQueries({ queryKey: ['count-sheet'] }), fail);
+        });
+      }} />
       <Card title="Earlier counts">
         {(counts.data ?? []).filter((c) => c.status !== 'OPEN').slice(0, 10).map((c) => (
           <Row key={c.id} left={`${dateTimeIST(c.started_at)} · ${c.warehouse_code}`} sub={`${c.counted} counted by ${c.started_by}${c.finished_by ? ` · ${c.status === 'APPLIED' ? 'applied' : 'discarded'} by ${c.finished_by}` : ''}`}
