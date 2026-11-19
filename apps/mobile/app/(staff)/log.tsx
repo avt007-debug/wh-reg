@@ -14,6 +14,8 @@ export default function MyDay() {
     queryFn: () => rpc<{
       dispatches: { id: string; invoice_no: string; customer_name: string; grand_total: number; used_override: boolean }[];
       purchases: { id: string; vendor_name: string; vendor_invoice_no: string; grand_total: number; status: string }[];
+      payments?: { id: string; customer: string; amount: number; mode: string; reference: string | null }[];
+      runs?: { id: string; place: string; visits: number }[];
     }>('my_day'),
   });
   return (
@@ -26,6 +28,13 @@ export default function MyDay() {
       <Card title={`Purchases today (${q.data?.purchases.length ?? 0})`}>
         {q.data?.purchases.map((p) => <Row key={p.id} left={p.vendor_name} right={formatINR(p.grand_total)}
           sub={`${p.vendor_invoice_no} · ${p.status === 'PENDING' ? '⏳ waiting for owner approval' : p.status === 'POSTED' ? '✓ approved, added to stock' : '✕ rejected'}`} />)}
+      </Card>
+      <Card title={`Payments collected today (${q.data?.payments?.length ?? 0})`}
+        subtitle={q.data?.payments?.length ? `Total ${formatINR(q.data.payments.reduce((a, p) => a + Number(p.amount), 0))}` : undefined}>
+        {q.data?.payments?.map((p) => <Row key={p.id} left={p.customer} sub={[p.mode, p.reference].filter(Boolean).join(' · ')} right={formatINR(Number(p.amount))} />)}
+      </Card>
+      <Card title={`Market runs today (${q.data?.runs?.length ?? 0})`}>
+        {q.data?.runs?.map((r) => <Row key={r.id} left={r.place} right={`${r.visits} shop(s)`} />)}
       </Card>
       <Label muted>Entries are locked once saved. Ask the owner to cancel a wrong entry, then re-enter it.</Label>
       <MyAccount />

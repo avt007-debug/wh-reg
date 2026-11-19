@@ -1015,6 +1015,32 @@ SELECT t.ok(EXISTS (SELECT 1 FROM attendance WHERE user_id = :EMPA AND work_date
 SELECT t.ok((SELECT count(*) FROM notifications WHERE user_id = :EMPA AND kind IN ('LEAVE_DECISION', 'CLOCK_FIX_DECISION')) = 2, 'employee is told the decisions');
 
 -- =============================================================================
+\echo '── Live-test fixes: auto clock-out, removed login hint, My Day payments'
+-- =============================================================================
+RESET ROLE;
+INSERT INTO attendance(user_id, warehouse_id, work_date, clock_in_at)
+SELECT :EMPB, :WHB, app.today_ist() - 3, ((app.today_ist() - 3) + time '09:10') AT TIME ZONE 'Asia/Kolkata'
+ WHERE NOT EXISTS (SELECT 1 FROM attendance WHERE user_id = :EMPB AND clock_out_at IS NULL);
+SELECT t.ok(app.auto_close_shifts() >= 1, 'an open shift from an earlier day is closed automatically');
+SELECT t.ok((SELECT auto_closed AND to_char(clock_out_at AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') = '18:30' FROM attendance
+              WHERE user_id = :EMPB AND work_date = app.today_ist() - 3), 'closed at the clock-out time and marked auto');
+SELECT t.ok(EXISTS (SELECT 1 FROM notifications WHERE user_id = :EMPB AND kind = 'AUTO_CLOCK_OUT'), 'employee is told');
+SELECT t.ok(app.auto_close_shifts() = 0, 'running it again changes nothing');
+INSERT INTO notification_outbox(event_type, payload, dedupe_key, created_at) VALUES ('WA_TEMPLATE', '{}', 'test:stale', now() - interval '5 hours');
+SELECT app.run_schedules();
+SELECT t.ok((SELECT status = 'DEAD' FROM notification_outbox WHERE dedupe_key = 'test:stale'), 'stale WhatsApp reminders are dropped, not sent late');
+UPDATE users SET removed_at = now() WHERE login_id = 'kumar.whb';
+SET ROLE anon;
+SELECT t.ok((public.login_precheck('KUMAR.WHB')->>'removed')::boolean, 'login says a removed User ID is removed');
+SELECT t.ok(NOT (public.login_precheck('ravi.wha')->>'removed')::boolean, 'active User ID is not flagged');
+RESET ROLE;
+UPDATE users SET removed_at = NULL WHERE login_id = 'kumar.whb';
+:AS_EMPA
+SELECT public.record_customer_payment(jsonb_build_object('customerId', (SELECT id FROM customers LIMIT 1), 'amount', 7, 'mode', 'CASH'));
+SELECT t.ok(jsonb_array_length(public.my_day()->'payments') >= 1, 'My Day lists payments collected today');
+:AS_OWNER
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.owner_activity(300)) x WHERE x->>'text' ILIKE '%insert%'), 'activity log has no raw "insert" lines');
+-- =============================================================================
 \echo '── Platform checks (as postgres)'
 -- =============================================================================
 RESET ROLE;

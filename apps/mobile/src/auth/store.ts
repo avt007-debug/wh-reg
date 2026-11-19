@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Role } from '@wh/shared';
 import type { Me } from '../api/types';
 import { rpc } from '../api/client';
-import { deviceId, deviceName, rememberId, userAgent } from '../lib/device';
+import { deviceId, deviceName, forgetId, rememberId, userAgent } from '../lib/device';
 import { queryClient } from '../lib/queryClient';
 import { loginEmail, supabase } from '../lib/supabase';
 
@@ -74,7 +74,8 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   async signIn(loginId, password) {
     const id = loginId.trim();
-    const pre = await rpc<{ locked_until: string | null }>('login_precheck', { p_login_id: id }).catch(() => ({ locked_until: null }));
+    const pre = await rpc<{ locked_until: string | null; removed?: boolean }>('login_precheck', { p_login_id: id }).catch(() => ({ locked_until: null, removed: false }));
+    if (pre.removed) { forgetId(id); throw new Error(`The User ID "${id}" has been removed. Ask the owner for your current User ID.`); }
     if (pre.locked_until) throw new Error(`Too many wrong passwords. Try again after ${new Date(pre.locked_until).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}, or ask the owner to unlock it.`);
     const { error } = await supabase.auth.signInWithPassword({ email: loginEmail(id), password });
     if (error) {
