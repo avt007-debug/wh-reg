@@ -87,10 +87,10 @@ export function invoiceHtml(d: InvoiceData): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${esc(b.invoice_no)}</title>
 <style>
   *{box-sizing:border-box} body{font:12px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;margin:0;padding:18px}
-  .top{display:flex;justify-content:space-between;gap:16px;border-bottom:3px solid #D40000;padding-bottom:10px}
-  h1{margin:0;font-size:20px;color:#D40000} .t{font-size:16px;font-weight:800;text-align:right} .m{color:#666;font-size:11px}
+  .top{display:flex;justify-content:space-between;gap:16px;border-bottom:3px solid #0F6E7A;padding-bottom:10px}
+  h1{margin:0;font-size:20px;color:#0F6E7A} .t{font-size:16px;font-weight:800;text-align:right} .m{color:#666;font-size:11px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0} .box{border:1px solid #ccc;border-radius:6px;padding:8px}
-  table{width:100%;border-collapse:collapse;margin-top:8px} th,td{border:1px solid #ccc;padding:5px;vertical-align:top} th{background:#FFF4CC;text-align:left}
+  table{width:100%;border-collapse:collapse;margin-top:8px} th,td{border:1px solid #ccc;padding:5px;vertical-align:top} th{background:#FFEFD6;text-align:left}
   .r{text-align:right;white-space:nowrap} .tot td{font-weight:700} .big{font-size:15px}
   .foot{display:flex;justify-content:space-between;gap:16px;margin-top:14px} .sign{text-align:right;min-width:200px;padding-top:40px}
   .cancel{color:#D40000;font-weight:800;font-size:16px;border:2px solid #D40000;padding:6px;text-align:center;margin:8px 0}

@@ -10,7 +10,7 @@ export function GstTag({ rate }: { rate: number | string }) {
   return (
     <View style={{ alignSelf: 'flex-start', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
       backgroundColor: gst ? t.accent : t.border }}>
-      <Text style={{ color: gst ? '#fff' : t.text, fontSize: 11, fontWeight: '700' }}>{gst ? `GST billed · ${Number(rate)}%` : 'Non-GST · 0%'}</Text>
+      <Text style={{ color: gst ? t.onAccent : t.text, fontSize: 11, fontWeight: '700' }}>{gst ? `GST billed · ${Number(rate)}%` : 'Non-GST · 0%'}</Text>
     </View>
   );
 }

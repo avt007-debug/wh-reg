@@ -173,7 +173,7 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, sections
       </View>
       <Modal visible={more} transparent animationType="slide" onRequestClose={() => setMore(false)}>
         <Pressable style={{ flex: 1, backgroundColor: t.overlay }} onPress={() => setMore(false)} />
-        <View style={[{ backgroundColor: t.dark ? 'rgba(30,12,14,0.86)' : 'rgba(255,255,255,0.86)', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 10, paddingBottom: insets.bottom + 14, maxHeight: '85%' }, glass(t, 28)]}>
+        <View style={[{ backgroundColor: t.dark ? 'rgba(12,26,31,0.86)' : 'rgba(255,255,255,0.86)', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 10, paddingBottom: insets.bottom + 14, maxHeight: '85%' }, glass(t, 28)]}>
           <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: t.border, marginBottom: 8 }} />
           <ScrollView contentContainerStyle={{ paddingHorizontal: 14, gap: 2 }}>
             {sections.map((sec) => (

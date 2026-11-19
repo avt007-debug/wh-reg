@@ -58,14 +58,14 @@ export function NotificationBell() {
         <Ionicons name={unread ? 'notifications' : 'notifications-outline'} size={21} color={unread ? t.accent : t.text} />
         {unread ? (
           <View style={{ position: 'absolute', top: 4, right: 3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5, borderColor: t.yellow }}>
-            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{unread > 99 ? '99+' : unread}</Text>
+            <Text style={{ color: t.onAccent, fontSize: 10, fontWeight: '800' }}>{unread > 99 ? '99+' : unread}</Text>
           </View>
         ) : null}
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={{ flex: 1, backgroundColor: t.overlay }} onPress={() => setOpen(false)} />
         <View style={[{ position: 'absolute', top: 60, right: 12, left: 12, maxWidth: 440, marginLeft: 'auto', maxHeight: '80%', borderRadius: 18,
-          backgroundColor: t.dark ? 'rgba(30,12,14,0.92)' : 'rgba(255,255,255,0.94)', borderWidth: 1, borderColor: t.border, padding: 14, gap: 10 }, glass(t, 28)]}>
+          backgroundColor: t.dark ? 'rgba(12,26,31,0.92)' : 'rgba(255,255,255,0.94)', borderWidth: 1, borderColor: t.border, padding: 14, gap: 10 }, glass(t, 28)]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Text style={{ flex: 1, color: t.text, fontSize: 17, fontWeight: '800' }}>Notifications</Text>
             {unread ? <SmallButton title="Mark all read" icon="checkmark-done-outline" onPress={() => read.mutate(null)} /> : null}

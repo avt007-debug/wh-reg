@@ -28,7 +28,7 @@ function Navigator() {
 
   if (!hydrated) return <View style={[{ flex: 1, justifyContent: 'center' }, pageBgFixed(t)]}><ActivityIndicator color={t.accent} /></View>;
   const owner = isOwner(user);
-  // Navigation containers must be see-through so the red/yellow glow behind the glass shows.
+  // Navigation containers must be see-through so the teal/amber glow behind the glass shows.
   const base = t.dark ? DarkTheme : DefaultTheme;
   const navTheme = { ...base, colors: { ...base.colors, background: t.bg, card: t.nav, primary: t.accent, text: t.text, border: t.border } };
   return (
@@ -78,7 +78,7 @@ function ThemeChrome() {
     document.body.style.backgroundImage = t.bgImage;
     document.body.style.backgroundAttachment = 'fixed';
     document.body.style.backgroundSize = 'cover';
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.dark ? t.bg : '#D40000');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.dark ? t.bg : '#0F6E7A');
   }, [t]);
   useEffect(() => { applyScale(useTextSize.getState().scale); }, []);
   return <StatusBar barStyle={t.dark ? 'light-content' : 'dark-content'} />;

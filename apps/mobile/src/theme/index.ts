@@ -52,80 +52,51 @@ const SERIES_LIGHT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#0
 const SERIES_DARK = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300'];
 
 /*
- * Racing red, white and yellow, with a frosted-glass finish.
- * On the web (browser / home-screen app) panels are see-through with a blur over a soft
- * red-and-yellow glow; on native phones the same colours are used without the blur.
+ * "Ocean & Sunrise" (chosen 19-Nov-2026): deep teal with warm amber highlights, easy on the eyes
+ * by day and night, with a frosted-glass finish. On the web (browser / home-screen app) panels are
+ * see-through with a blur over a soft teal-and-amber glow; on native phones the same colours are
+ * used without the blur.
+ *   accent  = teal (buttons, links, active tab)      yellow = amber (highlights, icon, toggle knob)
  */
 const WEB = Platform.OS === 'web';
-const RED = '#D40000';          // rosso
-const YELLOW = '#FFCC00';       // giallo
 
 const LIGHT = {
   dark: false,
   glass: WEB,
-  bg: '#FFF9F3',                                   // solid page colour (status bar, native)
-  screenBg: WEB ? 'transparent' : '#FFF9F3',       // pages let the glow show through on web
-  bgImage: `radial-gradient(1100px 620px at -5% -10%, rgba(212,0,0,0.30), transparent 60%),
-    radial-gradient(900px 560px at 105% 0%, rgba(255,204,0,0.55), transparent 62%),
-    radial-gradient(800px 600px at 60% 115%, rgba(212,0,0,0.16), transparent 60%),
-    linear-gradient(180deg, #FFFDF8 0%, #FFF4EE 100%)`,
-  surface: '#FFFAF5',                              // full-screen sheets (always solid)
-  card: WEB ? 'rgba(255,255,255,0.58)' : '#FFFFFF',
-  cardAlt: WEB ? 'rgba(255,255,255,0.55)' : '#FFF6EE',
-  border: WEB ? 'rgba(255,255,255,0.85)' : '#F1E3D8',
-  hairline: 'rgba(120,20,20,0.12)',
-  text: '#1A0B0B',
-  textSecondary: '#4E3434',
-  textMuted: '#806666',
-  accent: RED,
-  accentSoft: 'rgba(212,0,0,0.10)',
-  onAccent: '#FFFFFF',
-  yellow: YELLOW,
-  onYellow: '#1A0B0B',
-  danger: '#8E0A1C',
-  dangerSoft: 'rgba(142,10,28,0.10)',
-  warning: '#9A6200',
-  warningSoft: 'rgba(255,204,0,0.22)',
-  good: '#0E7A3A',
-  goodSoft: 'rgba(14,122,58,0.12)',
-  nav: WEB ? 'rgba(255,255,255,0.55)' : '#FFFFFF',
-  shadow: 'rgba(120,10,10,0.10)',
-  overlay: 'rgba(40,0,0,0.40)',
+  bg: '#F3F7F8', screenBg: WEB ? 'transparent' : '#F3F7F8',
+  bgImage: `radial-gradient(1000px 600px at -5% -10%, rgba(15,110,122,0.26), transparent 60%),
+    radial-gradient(900px 560px at 105% 0%, rgba(255,181,71,0.42), transparent 62%),
+    radial-gradient(800px 600px at 60% 115%, rgba(15,110,122,0.14), transparent 60%),
+    linear-gradient(180deg, #F8FBFB 0%, #EEF3F4 100%)`,
+  surface: '#F7FAFA', card: WEB ? 'rgba(255,255,255,0.66)' : '#FFFFFF', cardAlt: WEB ? 'rgba(255,255,255,0.58)' : '#F0F5F6',
+  border: WEB ? 'rgba(255,255,255,0.9)' : '#DCE6E8', hairline: 'rgba(14,42,48,0.12)',
+  text: '#0E2A30', textSecondary: '#2F4A50', textMuted: '#62797E',
+  accent: '#0F6E7A', accentSoft: 'rgba(15,110,122,0.12)', onAccent: '#FFFFFF',
+  yellow: '#FFB547', onYellow: '#0E2A30',
+  danger: '#B3261E', dangerSoft: 'rgba(179,38,30,0.10)', warning: '#8A5A00', warningSoft: 'rgba(255,181,71,0.24)',
+  good: '#1E7A46', goodSoft: 'rgba(30,122,70,0.12)',
+  nav: WEB ? 'rgba(255,255,255,0.62)' : '#FFFFFF', shadow: 'rgba(14,42,48,0.10)', overlay: 'rgba(8,24,28,0.40)',
   series: SERIES_LIGHT,
 };
 const DARK: typeof LIGHT = {
   dark: true,
   glass: WEB,
-  bg: '#120709',
-  screenBg: WEB ? 'transparent' : '#120709',
-  bgImage: `radial-gradient(1100px 620px at -5% -10%, rgba(212,0,0,0.42), transparent 60%),
-    radial-gradient(900px 560px at 105% 0%, rgba(255,204,0,0.16), transparent 62%),
-    radial-gradient(800px 600px at 60% 115%, rgba(212,0,0,0.22), transparent 60%),
-    linear-gradient(180deg, #0E0607 0%, #170A0C 100%)`,
-  surface: '#160A0C',
-  card: WEB ? 'rgba(40,18,20,0.52)' : '#1E0F11',
-  cardAlt: WEB ? 'rgba(255,255,255,0.06)' : '#261416',
-  border: WEB ? 'rgba(255,255,255,0.12)' : '#3A2224',
-  hairline: 'rgba(255,255,255,0.10)',
-  text: '#FFF6F2',
-  textSecondary: '#E2C9C6',
-  textMuted: '#AE8E8B',
-  accent: '#FF2A2A',
-  accentSoft: 'rgba(255,42,42,0.16)',
-  onAccent: '#FFFFFF',
-  yellow: '#FFD60A',
-  onYellow: '#1A0B0B',
-  danger: '#FF7A85',
-  dangerSoft: 'rgba(255,122,133,0.14)',
-  warning: '#FFD60A',
-  warningSoft: 'rgba(255,214,10,0.14)',
-  good: '#46D484',
-  goodSoft: 'rgba(70,212,132,0.14)',
-  nav: WEB ? 'rgba(24,10,12,0.55)' : '#160A0C',
-  shadow: 'rgba(0,0,0,0.45)',
-  overlay: 'rgba(0,0,0,0.60)',
+  bg: '#0C1A1F', screenBg: WEB ? 'transparent' : '#0C1A1F',
+  bgImage: `radial-gradient(1000px 620px at -5% -10%, rgba(15,110,122,0.55), transparent 60%),
+    radial-gradient(900px 560px at 105% 0%, rgba(255,181,71,0.14), transparent 62%),
+    radial-gradient(800px 600px at 60% 115%, rgba(15,110,122,0.30), transparent 60%),
+    linear-gradient(180deg, #0A161A 0%, #10222A 100%)`,
+  surface: '#0F1E24', card: WEB ? 'rgba(22,44,52,0.58)' : '#13262D', cardAlt: WEB ? 'rgba(255,255,255,0.06)' : '#183038',
+  border: WEB ? 'rgba(255,255,255,0.10)' : '#22404A', hairline: 'rgba(255,255,255,0.09)',
+  text: '#EEF6F7', textSecondary: '#C6D8DB', textMuted: '#87A2A7',
+  accent: '#4FD1C5', accentSoft: 'rgba(79,209,197,0.16)', onAccent: '#0C1A1F',
+  yellow: '#FFB547', onYellow: '#0C1A1F',
+  danger: '#FF8A80', dangerSoft: 'rgba(255,138,128,0.14)', warning: '#FFC94D', warningSoft: 'rgba(255,201,77,0.14)',
+  good: '#7EE2A8', goodSoft: 'rgba(126,226,168,0.14)',
+  nav: WEB ? 'rgba(12,26,31,0.62)' : '#0F1E24', shadow: 'rgba(0,0,0,0.45)', overlay: 'rgba(0,0,0,0.6)',
   series: SERIES_DARK,
 };
+
 
 export function useTheme() {
   const system = useColorScheme();

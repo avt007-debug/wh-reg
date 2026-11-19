@@ -9,7 +9,7 @@ const tags = `
     <link rel="manifest" href="${b}/manifest.webmanifest" />
     <link rel="icon" type="image/png" href="${b}/favicon.png" />
     <link rel="apple-touch-icon" href="${b}/icons/apple-touch-icon.png" />
-    <meta name="theme-color" content="#D40000" />
+    <meta name="theme-color" content="#0F6E7A" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="WH Reg" />

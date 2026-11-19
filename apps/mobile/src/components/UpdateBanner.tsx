@@ -36,7 +36,7 @@ export function UpdateBanner() {
       <Pressable onPress={() => location.reload()} accessibilityRole="button"
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: t.accent, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 999, borderWidth: 2, borderColor: t.yellow, maxWidth: 460 }}>
         <Ionicons name="refresh" size={18} color="#fff" />
-        <Text style={{ color: '#fff', fontWeight: '800' }}>A new version of the app is ready — tap to update</Text>
+        <Text style={{ color: t.onAccent, fontWeight: '800' }}>A new version of the app is ready — tap to update</Text>
       </Pressable>
     </View>
   );
