@@ -533,6 +533,47 @@ SELECT t.ok((SELECT (x->>'available')::numeric FROM jsonb_array_elements(public.
             'using ₹50 leaves ₹27 available');
 SELECT t.throws($$SELECT public.owner_use_credit(jsonb_build_object('vendorId', (SELECT id FROM vendors WHERE gstin = '37AAPFV1234K1ZS'), 'amount', 100))$$,
             'WH005', 'cannot use more credit than is available');
+
+\echo '── Discount received per item → credit note'
+SELECT public.create_purchase(jsonb_build_object('clientTxnId', gen_random_uuid(), 'warehouseId', :WHA,
+  'newVendor', jsonb_build_object('name', 'Disc Test Traders'), 'vendorInvoiceNo', 'DT-1', 'vendorInvoiceDate', app.today_ist(),
+  'lines', jsonb_build_array(
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS', 'qty', 5, 'unitBasePrice', 200, 'gstRate', 18),
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 100, 'unitBasePrice', 2, 'gstRate', 18),
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS', 'qty', 1, 'unitBasePrice', 100, 'gstRate', 18)))) -> 'purchase' AS dt \gset
+SELECT (d->'lines'->0->>'id') AS dt1, (d->'lines'->1->>'id') AS dt2, (d->'lines'->2->>'id') AS dt3
+  FROM public.owner_purchase_detail((:'dt'::jsonb->>'id')::uuid) d \gset
+SELECT public.owner_set_purchase_discounts_received((:'dt'::jsonb->>'id')::uuid, jsonb_build_array(
+  jsonb_build_object('itemId', :'dt1', 'mode', 'RATE', 'value', 180),
+  jsonb_build_object('itemId', :'dt2', 'mode', 'PERCENT', 'value', 10),
+  jsonb_build_object('itemId', :'dt3', 'mode', 'AMOUNT', 'value', 15))) -> 'credit_total' AS dt_credit \gset
+SELECT t.ok(:'dt_credit'::numeric = 135,
+            'credit note = value before GST ₹1,300 − discounted value ₹1,165 (5 × ₹180 + ₹180 + ₹85) = ₹135');
+SELECT t.ok((SELECT (l->>'credit_value')::numeric = 100 AND (l->>'discounted_rate')::numeric = 180 AND (l->>'credit_amount')::numeric = 100
+               FROM jsonb_array_elements(public.owner_purchase_detail((:'dt'::jsonb->>'id')::uuid)->'lines') l WHERE l->>'id' = :'dt1'),
+            'discounted rate ₹180 on 5 × ₹200 → ₹100 credit, rate kept for display');
+SELECT t.throws(format($$SELECT public.owner_set_purchase_discounts_received(%L, jsonb_build_array(jsonb_build_object('itemId', %L, 'mode', 'RATE', 'value', 250)))$$,
+                       :'dt'::jsonb->>'id', :'dt1'), 'WH005', 'a discounted rate above the billed rate is refused');
+SELECT t.throws(format($$SELECT public.owner_set_purchase_discounts_received(%L, jsonb_build_array(jsonb_build_object('itemId', %L, 'mode', 'AMOUNT', 'value', 500)))$$,
+                       :'dt'::jsonb->>'id', :'dt3'), 'WH005', 'a discount bigger than the item value is refused');
+SELECT public.owner_set_purchase_discounts_received((:'dt'::jsonb->>'id')::uuid,
+  jsonb_build_array(jsonb_build_object('itemId', :'dt2', 'mode', 'PERCENT', 'value', 0))) -> 'credit_total' AS dt_credit \gset
+SELECT t.ok(:'dt_credit'::numeric = 115, 'clearing one item''s discount takes it off the credit note (₹115)');
+SELECT t.ok((SELECT (x->>'available')::numeric FROM jsonb_array_elements(public.owner_credit_summary()->'vendors') x WHERE x->>'vendor_name' = 'Disc Test Traders') = 115,
+            'the credit note shows as credit available from that seller');
+SELECT public.owner_update_purchase((:'dt'::jsonb->>'id')::uuid, jsonb_build_object('lines', jsonb_build_array(
+    jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'TAP-SD-903'), 'uomCode', 'PCS', 'qty', 5, 'unitBasePrice', 200,
+                       'gstRate', 18, 'creditAmount', 100, 'discountedRate', 180)))) \g /dev/null
+SELECT t.ok((public.owner_purchase_detail((:'dt'::jsonb->>'id')::uuid)->>'credit_total')::numeric = 100,
+            'editing the bill''s items keeps a ₹ credit');
+SELECT public.owner_set_purchase_credits((:'dt'::jsonb->>'id')::uuid, NULL, 2);
+SELECT t.ok((public.owner_purchase_detail((:'dt'::jsonb->>'id')::uuid)->>'credit_total')::numeric = 20,
+            'setting a % afterwards replaces the ₹ credit (2% of ₹1,000)');
+:AS_EMPA
+SELECT t.throws(format($$SELECT public.owner_set_purchase_discounts_received(%L, '[]')$$, :'dt'::jsonb->>'id'), 'WH002',
+                'employees cannot enter discounts received');
+:AS_OWNER
+
 SELECT public.owner_update_purchase((:'op'::jsonb->>'id')::uuid, jsonb_build_object('loadingCharges', 40, 'lines', jsonb_build_array(
     jsonb_build_object('productId', (SELECT id FROM products WHERE sku_code = 'FIS-SX8'), 'uomCode', 'PCS', 'qty', 100, 'unitBasePrice', 2,
                        'gstRate', 18, 'discountPct', 10, 'creditPct', 5)))) \g /dev/null

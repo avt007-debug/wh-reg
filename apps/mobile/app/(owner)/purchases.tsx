@@ -4,6 +4,9 @@
  *     items bought on it
  *   • edit a saved purchase (invoice no/date, LR no, freight, items, qty, rate)
  *     — stock is re-posted automatically, the old version stays in the audit log
+ *   • discount received from the seller on each item → credit note for future
+ *     purchases: credit note = value of all items before GST − discounted value
+ *     (asked right after approving, or any time from the bill) — owner only
  *   • extra discount the owner received, per item and/or per bill — owner only;
  *     staff have no screen, table or API that shows these numbers
  *   • export the month to Excel
@@ -36,6 +39,7 @@ interface Line {
   id: string; line_no: number; product_id: string; sku_code: string; name: string; uom: string; qty: number; qty_base: number;
   hsn_code: string | null; gst_rate: number; unit_base_price: number; unit_incl_price: number; line_taxable: number; line_total: number;
   discount_amount: number; discount_pct: number; mrp: number | null; credit_pct: number | null; credit_value: number;
+  credit_amount: number | null; discounted_rate: number | null;
   item_discount_type: DiscType | null; item_discount_value: number | null; item_discount_amount: number; effective_unit_cost_base: number | null;
 }
 interface Purchase {
@@ -50,6 +54,13 @@ interface Purchase {
 
 const n = (x: unknown) => Number(x ?? 0);
 const discLabel = (t: DiscType | null, v: number | null) => (!t || !v ? '' : t === 'PERCENT' ? `${n(v)}%` : formatINR(n(v)));
+const round2 = (x: number) => Math.round(x * 100) / 100;
+/** value of all items before GST (after the seller's printed discount) */
+const itemsValue = (p: Purchase) => round2(p.lines.reduce((a, l) => a + n(l.line_taxable), 0));
+const creditLabel = (l: Line) => (l.discounted_rate != null
+  ? `discounted rate ${formatINR(n(l.discounted_rate))} → credit ${formatINR(n(l.credit_value))}`
+  : l.credit_amount != null ? `discount ${formatINR(n(l.credit_amount))} → credit ${formatINR(n(l.credit_value))}`
+  : `discount ${n(l.credit_pct)}% → credit ${formatINR(n(l.credit_value))}`);
 
 export default function OwnerPurchases() {
   const t = useTheme();
@@ -61,6 +72,7 @@ export default function OwnerPurchases() {
   const [returning, setReturning] = useState<Purchase | null>(null);
   const [view, setView] = useState<'Bills' | 'Credit notes'>('Bills');
   const [adding, setAdding] = useState(false);
+  const [crediting, setCrediting] = useState<{ p: Purchase; approved: boolean } | null>(null);
   const month = monthStart(back);
 
   const qc = useQueryClient();
@@ -75,7 +87,8 @@ export default function OwnerPurchases() {
   };
   const approve = useMutation({
     mutationFn: (p: Purchase) => rpc<Purchase>('owner_approve_purchase', { p_id: p.id }),
-    onSuccess: (p) => { refreshAll(); notify('Approved', `Invoice ${p.vendor_invoice_no}: ${p.lines.length} item(s) added to ${p.warehouse_name} stock.`); },
+    // straight after approving, list the items so the owner can enter the discount received
+    onSuccess: (p) => { refreshAll(); setCrediting({ p, approved: true }); },
     onError: (e) => notify('Not approved', e instanceof Error ? e.message : String(e)),
   });
   const reject = async (p: Purchase) => {
@@ -178,7 +191,12 @@ export default function OwnerPurchases() {
         </Toolbar>
 
         {rows.map((p) => <InvoiceCard key={p.id} p={p} onEdit={() => setEdit(p)}
-          actions={p.status === 'POSTED' ? <SmallButton icon="return-down-back-outline" title="Goods returned" onPress={() => setReturning(p)} /> : undefined} />)}
+          actions={p.status === 'POSTED' ? (
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              <SmallButton icon="pricetag-outline" title={n(p.credit_total) > 0 ? 'Discount received / credit note' : 'Enter discount received'}
+                kind={n(p.credit_total) > 0 ? undefined : 'primary'} onPress={() => setCrediting({ p, approved: false })} />
+              <SmallButton icon="return-down-back-outline" title="Goods returned" onPress={() => setReturning(p)} />
+            </View>) : undefined} />)}
         {!rows.length ? <Label muted>{list.isLoading ? 'Loading…' : `No purchases in ${monthLong(month)}`}</Label> : null}
         </>
       )}
@@ -194,6 +212,7 @@ export default function OwnerPurchases() {
         </ScrollView>
       </Modal>
       <PurchaseEditor purchase={edit} onClose={() => setEdit(null)} />
+      <DiscountReceived purchase={crediting?.p ?? null} justApproved={!!crediting?.approved} onClose={() => setCrediting(null)} />
       <ReturnSheet kind="purchase" docId={returning?.id ?? null} title={returning ? `${returning.vendor_name} · invoice ${returning.vendor_invoice_no}` : ''}
         onClose={() => setReturning(null)} />
     </Screen>
@@ -225,7 +244,7 @@ function InvoiceCard({ p, onEdit, actions }: { p: Purchase; onEdit: () => void; 
             <Text style={{ color: t.textMuted, fontSize: 12 }}>
               {l.sku_code}{l.hsn_code ? ` · HSN ${l.hsn_code}` : ''} · {n(l.qty)} {l.uom} × {formatINR(n(l.unit_base_price))}
               {n(l.discount_pct) ? ` − ${n(l.discount_pct)}%` : n(l.discount_amount) ? ` − ${formatINR(n(l.discount_amount))} disc.` : ''} + {n(l.gst_rate)}% GST
-              {n(l.credit_value) ? ` · credit ${n(l.credit_pct)}% = ${formatINR(n(l.credit_value))}` : ''}
+              {n(l.credit_value) ? ` · ${creditLabel(l)}` : ''}
             </Text>
             <GstTag rate={l.gst_rate} />
             {n(l.item_discount_amount) > 0 ? (
@@ -241,7 +260,10 @@ function InvoiceCard({ p, onEdit, actions }: { p: Purchase; onEdit: () => void; 
       <GstSplitRows {...splitByGst(p.lines)} />
       <Row left="Billed total" right={formatINR(n(p.grand_total))}
         sub={`taxable ${formatINR(n(p.taxable_total))} · GST ${formatINR(n(p.tax_total))}${n(p.freight_amount) + n(p.loading_charges) + n(p.other_charges) ? ` · extra charges ${formatINR(n(p.freight_amount) + n(p.loading_charges) + n(p.other_charges))}` : ''}`} />
-      {n(p.credit_total) > 0 ? <Row left="Credit note earned" sub="for future purchases · not deducted from this bill" right={formatINR(n(p.credit_total))} /> : null}
+      {n(p.credit_total) > 0 ? (
+        <Row left="Credit note earned" right={formatINR(n(p.credit_total))}
+          sub={`${formatINR(itemsValue(p))} before GST − ${formatINR(itemsValue(p) - n(p.credit_total))} discounted value · for future purchases, not deducted from this bill`} />
+      ) : null}
       {n(p.total_discount) > 0 ? (
         <Row left="Net after your discounts" right={formatINR(n(p.net_payable))}
           sub={`−${formatINR(n(p.total_discount))}${n(p.bill_discount_amount) ? ` (bill ${discLabel(p.bill_discount_type, p.bill_discount_value)})` : ''}`} />
@@ -258,7 +280,7 @@ interface EdLine {
   uoms: { code: string; factor: number; displayName?: string }[];
   uom: string; qty: string; gstRate: number; price: UnitPrice | null; hsn: string | null;
   discType: DiscType | null; discValue: string; discReason: string;
-  discPct: string; creditPct: string;
+  discPct: string; creditPct: string; creditAmount: number | null; discountedRate: number | null;
   orig?: { uom: string; qty: number; base: number; gst: number; discType: DiscType | null; discValue: number; discPct: number; creditPct: number; hsn: string | null };
 }
 
@@ -303,6 +325,7 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
       price: { base: n(l.unit_base_price), inclusive: n(l.unit_incl_price), tax: n(l.unit_incl_price) - n(l.unit_base_price) },
       discType: l.item_discount_type, discValue: l.item_discount_value ? String(n(l.item_discount_value)) : '', discReason: '',
       discPct: n(l.discount_pct) ? String(n(l.discount_pct)) : '', creditPct: l.credit_pct ? String(n(l.credit_pct)) : '',
+      creditAmount: l.credit_amount != null ? n(l.credit_amount) : null, discountedRate: l.discounted_rate != null ? n(l.discounted_rate) : null,
       orig: { uom: l.uom, qty: n(l.qty), base: n(l.unit_base_price), gst: n(l.gst_rate), discType: l.item_discount_type, discValue: n(l.item_discount_value),
               discPct: n(l.discount_pct), creditPct: n(l.credit_pct), hsn: l.hsn_code },
     })));
@@ -322,7 +345,7 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
     setLines((ls) => [...ls, {
       key: `new-${Date.now()}`, productId: h.id, sku: h.sku_code, name: h.name, uoms: h.uoms, uom: base, qty: '',
       gstRate: n(h.default_gst_rate), hsn: h.hsn_code, price: null, discType: null, discValue: '', discReason: '',
-      discPct: '', creditPct: '',
+      discPct: '', creditPct: '', creditAmount: null, discountedRate: null,
     }]);
   };
 
@@ -353,12 +376,16 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
         payload.lines = lines.map((l) => ({
           productId: l.productId, uomCode: l.uom, qty: Number(l.qty), hsnCode: l.hsn, gstRate: l.gstRate,
           unitBasePrice: l.price!.base, unitInclPrice: l.price!.inclusive, discountPct: Number(l.discPct) || 0, creditPct: Number(l.creditPct) || 0,
+          creditAmount: l.creditAmount, discountedRate: l.discountedRate,
           discountType: l.discType, discountValue: Number(l.discValue || 0), discountReason: l.discReason || null,
         }));
       }
       const after = await rpc<Purchase>('owner_update_purchase', { p_id: p.id, p: payload });
       if (!structural && creditChanged) {
-        await rpc('owner_set_purchase_credits', { p_purchase: p.id, p_lines: lines.map((l, i) => ({ lineNo: i + 1, pct: Number(l.creditPct) || 0 })) });
+        await rpc('owner_set_purchase_credits', { p_purchase: p.id, p_lines: lines
+          .map((l, i) => ({ l, lineNo: i + 1 }))
+          .filter(({ l }) => !l.orig || l.orig.creditPct !== (Number(l.creditPct) || 0))
+          .map(({ l, lineNo }) => ({ lineNo, pct: Number(l.creditPct) || 0 })) });
       }
       if (!structural) {
         for (const l of lines.filter(lineDiscChanged)) {
@@ -423,8 +450,12 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
                 <Field label="HSN code" value={l.hsn ?? ''} keyboardType="number-pad" maxLength={8} onChangeText={(v) => upd(i, { hsn: v.replace(/\D/g, '') || null })} />
                 <Field label="Discount % (on the seller's bill)" keyboardType="decimal-pad" value={l.discPct} onChangeText={(v) => upd(i, { discPct: v })} placeholder="0" />
               </View>
-              <Field label="Credit note % (credit for future purchases)" keyboardType="decimal-pad" value={l.creditPct}
-                onChangeText={(v) => upd(i, { creditPct: v })} placeholder="0" />
+              {l.creditAmount != null ? (
+                <Label muted>Credit note {formatINR(l.creditAmount)}{l.discountedRate != null ? ` (discounted rate ${formatINR(l.discountedRate)})` : ''} · change it with "Discount received" on the bill</Label>
+              ) : (
+                <Field label="Credit note % (credit for future purchases)" keyboardType="decimal-pad" value={l.creditPct}
+                  onChangeText={(v) => upd(i, { creditPct: v })} placeholder="0" />
+              )}
               <Label>Extra discount on this item (only you see this)</Label>
               <Chips options={['NONE', 'PERCENT', 'AMOUNT'] as const} value={l.discType ?? 'NONE'}
                 onChange={(v) => upd(i, { discType: v === 'NONE' ? null : v, discValue: v === 'NONE' ? '' : l.discValue })}
@@ -466,6 +497,99 @@ function PurchaseEditor({ purchase: p, onClose }: { purchase: Purchase | null; o
         <Pressable onPress={onClose}><Text style={{ color: t.accent, textAlign: 'center', padding: 12 }}>Cancel</Text></Pressable>
       </ScrollView>
       <ItemPicker visible={picker} onClose={() => setPicker(false)} onPick={addItem} />
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- discount received → credit note
+
+type CreditMode = 'PERCENT' | 'AMOUNT' | 'RATE';
+interface CrLine { id: string; mode: CreditMode; value: string }
+
+/** ₹ credit for one item, or an error when the entry is not possible */
+function lineCredit(l: Line, c: CrLine): { credit: number; error?: string } {
+  const taxable = n(l.line_taxable);
+  const v = c.value.trim() === '' ? null : Number(c.value);
+  if (v == null) return { credit: 0 };
+  if (!Number.isFinite(v) || v < 0) return { credit: 0, error: 'Enter a number' };
+  if (c.mode === 'PERCENT') return v > 100 ? { credit: 0, error: 'Discount % must be 0–100' } : { credit: round2(taxable * v / 100) };
+  if (c.mode === 'AMOUNT') return v > taxable ? { credit: 0, error: `More than the item value ${formatINR(taxable)}` } : { credit: round2(v) };
+  const credit = round2(taxable - round2(n(l.qty) * v));
+  return credit < 0 ? { credit: 0, error: `Billed rate is ${formatINR(round2(taxable / (n(l.qty) || 1)))} — the discounted rate must be lower` } : { credit };
+}
+
+function DiscountReceived({ purchase: p, justApproved, onClose }: { purchase: Purchase | null; justApproved: boolean; onClose: () => void }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const [cr, setCr] = useState<CrLine[]>([]);
+
+  useEffect(() => {
+    if (!p) return;
+    setCr(p.lines.map((l) => (l.discounted_rate != null ? { id: l.id, mode: 'RATE', value: String(n(l.discounted_rate)) }
+      : l.credit_amount != null ? { id: l.id, mode: 'AMOUNT', value: String(n(l.credit_amount)) }
+      : { id: l.id, mode: 'PERCENT', value: l.credit_pct ? String(n(l.credit_pct)) : '' })));
+  }, [p]);
+
+  const save = useMutation({
+    mutationFn: () => rpc<Purchase>('owner_set_purchase_discounts_received', {
+      p_purchase: p!.id, p_lines: cr.map((c) => ({ itemId: c.id, mode: c.mode, value: c.value.trim() === '' ? null : Number(c.value) })),
+    }),
+    onSuccess: (after) => {
+      for (const k of ['purchases-month', 'pending-purchases', 'credit-summary', 'purchases-net']) void qc.invalidateQueries({ queryKey: [k] });
+      notify('Credit note saved', n(after.credit_total) > 0
+        ? `${formatINR(n(after.credit_total))} credit from ${after.vendor_name} for future purchases.`
+        : 'No discount recorded on this bill.');
+      onClose();
+    },
+    onError: (e) => notify('Not saved', e instanceof Error ? e.message : String(e)),
+  });
+
+  if (!p || cr.length !== p.lines.length) return null;
+  const upd = (i: number, patch: Partial<CrLine>) => setCr((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const calc = p.lines.map((l, i) => lineCredit(l, cr[i]!));
+  const before = itemsValue(p);
+  const credit = round2(calc.reduce((a, c) => a + c.credit, 0));
+  const hasError = calc.some((c) => c.error);
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <ScrollView style={[{ flex: 1 }, pageBg(t)]} keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ padding: 16, gap: 12, paddingTop: 40, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
+        <Text style={{ color: t.text, fontSize: 20, fontWeight: '700' }}>Discount received → credit note</Text>
+        <Label>{p.vendor_name} · invoice {p.vendor_invoice_no} · {dmy(p.vendor_invoice_date)} · {p.warehouse_name}</Label>
+        {justApproved ? (
+          <Card tone="good">
+            <Text style={{ color: t.text, fontWeight: '700' }}>✓ Approved — {p.lines.length} item(s) added to {p.warehouse_name} stock</Text>
+            <Label>Enter the discount the seller gave on each item. Leave it empty if there was none.</Label>
+          </Card>
+        ) : null}
+
+        {p.lines.map((l, i) => {
+          const c = cr[i]!; const r = calc[i]!; const taxable = n(l.line_taxable);
+          return (
+            <Card key={l.id}>
+              <Text style={{ color: t.text, fontWeight: '700' }}>{i + 1}. {l.name}</Text>
+              <Label muted>{l.sku_code} · {n(l.qty)} {l.uom} × {formatINR(round2(taxable / (n(l.qty) || 1)))} = {formatINR(taxable)} before GST</Label>
+              <Chips options={['PERCENT', 'AMOUNT', 'RATE'] as const} value={c.mode} onChange={(m) => upd(i, { mode: m, value: '' })}
+                format={(m) => (m === 'PERCENT' ? '% off' : m === 'AMOUNT' ? '₹ off (whole item)' : 'Discounted rate')} />
+              <Field keyboardType="decimal-pad" value={c.value} onChangeText={(v) => upd(i, { value: v })} placeholder="0" error={r.error}
+                label={c.mode === 'PERCENT' ? 'Discount %' : c.mode === 'AMOUNT' ? 'Discount ₹ on this item (before GST)' : `Discounted rate per ${l.uom} (before GST)`} />
+              <Row left="Discounted value" right={formatINR(round2(taxable - r.credit))} />
+              <Row left="Credit on this item" right={formatINR(r.credit)} />
+            </Card>
+          );
+        })}
+
+        <Card title="Credit note">
+          <Row left="Value of all items before GST" right={formatINR(before)} />
+          <Row left="Discounted value of all items" right={`− ${formatINR(round2(before - credit))}`} />
+          <Row left="Credit note" right={formatINR(credit)} sub="kept for future purchases from this seller · not deducted from this bill" />
+        </Card>
+
+        <Button title={credit > 0 ? `Save credit note ${formatINR(credit)}` : 'Save (no discount)'} onPress={() => save.mutate()}
+          busy={save.isPending} disabled={hasError} />
+        <Pressable onPress={onClose}><Text style={{ color: t.accent, textAlign: 'center', padding: 12 }}>{justApproved ? 'Skip for now' : 'Cancel'}</Text></Pressable>
+      </ScrollView>
     </Modal>
   );
 }
