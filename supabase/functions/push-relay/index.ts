@@ -3,9 +3,9 @@
  * daily summary, approvals, alerts) to every phone where that person turned notifications on.
  *
  * Poked by Postgres (pg_net) right after a notification is inserted, and every 2 minutes by
- * pg_cron while anything is unsent. Auth: header `x-relay-secret` == function secret
- * PUSH_RELAY_SECRET (Vault: push_relay_secret); verify_jwt is off.
- * Function secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK (JSON), VAPID_SUBJECT (mailto:…).
+ * pg_cron while anything is unsent. Auth: header `x-relay-secret` == Vault push_relay_secret;
+ * verify_jwt is off. VAPID keys come from Vault via push_config() (function secrets
+ * PUSH_RELAY_SECRET / VAPID_PUBLIC_KEY / VAPID_PRIVATE_JWK / VAPID_SUBJECT override).
  */
 import { adminClient, json, safeEqual } from '../_shared/supabase.ts';
 import { sendPush, type VapidKeys } from '../_shared/webpush.ts';
@@ -16,17 +16,20 @@ interface Claimed {
 }
 
 Deno.serve(async (req) => {
-  const secret = Deno.env.get('PUSH_RELAY_SECRET') ?? '';
+  const db = adminClient();
+  // keys live in Vault (push_config is callable by the service role only); env vars override
+  const { data: cfg } = await db.rpc('push_config');
+  const c = (cfg ?? {}) as { relay_secret?: string; public_key?: string; private_jwk?: string; subject?: string };
+  const secret = Deno.env.get('PUSH_RELAY_SECRET') ?? c.relay_secret ?? '';
   if (!secret || !safeEqual(req.headers.get('x-relay-secret') ?? '', secret)) return json({ error: 'forbidden' }, 403);
 
   const vapid: VapidKeys = {
-    publicKey: Deno.env.get('VAPID_PUBLIC_KEY') ?? '',
-    privateJwk: JSON.parse(Deno.env.get('VAPID_PRIVATE_JWK') ?? '{}'),
-    subject: Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@whreg.app',
+    publicKey: Deno.env.get('VAPID_PUBLIC_KEY') ?? c.public_key ?? '',
+    privateJwk: JSON.parse(Deno.env.get('VAPID_PRIVATE_JWK') ?? c.private_jwk ?? '{}'),
+    subject: Deno.env.get('VAPID_SUBJECT') ?? c.subject ?? 'mailto:admin@whreg.app',
   };
   if (!vapid.publicKey || !vapid.privateJwk.d) return json({ error: 'VAPID keys missing' }, 500);
 
-  const db = adminClient();
   let sent = 0, failed = 0, removed = 0;
   for (let round = 0; round < 5; round++) {
     const { data, error } = await db.rpc('push_claim', { p_limit: 100 });
