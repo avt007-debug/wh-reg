@@ -1,5 +1,6 @@
 /**
- * Owner settings for the automatic WhatsApp + in-app messages:
+ * Owner settings for the automatic messages (WhatsApp is used only for the owner's daily summary;
+ * reminders go to employees as phone notifications + the app's bell):
  * clock-in reminder, clock-out reminder, owner's daily summary; working days; extra owner numbers.
  * Also the delivery log of the latest WhatsApp messages.
  */
@@ -78,13 +79,13 @@ export function ReminderSettings() {
   if (!s) return <Card title="Reminders & daily summary" icon="alarm-outline"><Label muted>Loading…</Label></Card>;
   return (
     <Card title="Reminders & daily summary" icon="alarm-outline"
-      subtitle="Sent on WhatsApp and shown in the app's bell. Employees get reminders on their own mobile number.">
+      subtitle="Reminders reach employees as phone notifications and in the app's bell. Only your daily summary goes on WhatsApp.">
       {!s.whatsapp_connected ? (
-        <Notice tone="warning">WhatsApp is not connected yet, so these messages appear only in the app for now. Once your Meta WhatsApp Business number is connected they go out on WhatsApp automatically.</Notice>
+        <Notice tone="warning">WhatsApp is not connected yet, so your daily summary appears only in the app (and as a phone notification) for now. Once your Meta WhatsApp Business number is connected it also goes out on WhatsApp.</Notice>
       ) : <Notice tone="good">WhatsApp is connected — messages are being delivered.</Notice>}
-      <JobRow title="Clock-in reminder" hint="To employees who have not clocked in yet" job={s.clock_in} onChange={(j) => setS({ ...s, clock_in: j })} />
-      <JobRow title="Clock-out reminder" hint="To employees still clocked in" job={s.clock_out} onChange={(j) => setS({ ...s, clock_out: j })} />
-      <JobRow title="Daily summary to owner" hint="Sales (to whom), purchases (from whom), attendance, market runs" job={s.summary} onChange={(j) => setS({ ...s, summary: j })} />
+      <JobRow title="Clock-in reminder" hint="Phone notification to employees who have not clocked in yet" job={s.clock_in} onChange={(j) => setS({ ...s, clock_in: j })} />
+      <JobRow title="Clock-out reminder" hint="Phone notification to employees still clocked in" job={s.clock_out} onChange={(j) => setS({ ...s, clock_out: j })} />
+      <JobRow title="Daily summary to owner" hint="On WhatsApp and as a phone notification: sales (to whom), purchases (from whom), attendance, market runs" job={s.summary} onChange={(j) => setS({ ...s, summary: j })} />
       <Label>Working days (reminders are sent only on these days)</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {DAYS.map((d) => {
@@ -102,9 +103,6 @@ export function ReminderSettings() {
         format={(v) => (v === 'every' ? 'Every day' : 'Working days only')} />
       <Field label="Extra numbers for the daily summary (optional)" value={extra} onChangeText={setExtra} keyboardType="phone-pad" placeholder="e.g. 9876543210, 9123456780" />
       <Label muted>Summary goes to: {s.resolved_owner_numbers.length ? s.resolved_owner_numbers.map((x) => `+${x}`).join(', ') : 'nobody yet — add your mobile number to your owner login or above'}</Label>
-      {s.employees_without_phone.length ? (
-        <Notice tone="warning">No mobile number for: {s.employees_without_phone.join(', ')}. They get reminders only in the app. Add numbers in Staff logins → Edit.</Notice>
-      ) : null}
       <Button title="Save reminder settings" icon="checkmark" onPress={() => save.mutate()} busy={save.isPending} />
       <SmallButton title="Send today's summary now" icon="paper-plane-outline" onPress={() => sendNow.mutate()} disabled={sendNow.isPending} />
 

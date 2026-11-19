@@ -58,10 +58,13 @@ A 5-minute `pg_cron` job (`whreg-schedules` → `app.run_schedules()`) queues th
 times set by the owner in **Settings → Reminders & daily summary** (defaults below). Each one is also
 saved as an in-app notification (the bell), so they work even before WhatsApp is connected.
 
+**Since 19-Nov-2026 WhatsApp carries only the owner's daily summary.** The 09:00 clock-in and 18:30
+clock-out reminders go to employees as phone notifications (web push from the installed app, see
+`push-relay`) and the bell — `app.queue_whatsapp` ignores every kind except `DAILY_SUMMARY`.
+Only the `daily_owner_summary` template needs to be submitted to Meta.
+
 | Template | When (default) | To | Variables |
 |---|---|---|---|
-| `clock_in_reminder` | 09:00 on working days (Mon–Sat) | each employee not clocked in | {{1}} first name, {{2}} date |
-| `clock_out_reminder` | 18:30 on working days | each employee still clocked in | {{1}} first name, {{2}} clock-in time |
 | `daily_owner_summary` | 20:00 every day | owner's mobile + extra numbers | {{1}} date, {{2}} sales, {{3}} purchases, {{4}} attendance, {{5}} market runs |
 
 Submit these three templates (category **Utility**, language **English `en`**):

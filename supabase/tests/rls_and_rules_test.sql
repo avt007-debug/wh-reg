@@ -758,7 +758,7 @@ SELECT t.ok((SELECT (w->>'skus_at_list_price')::int >= 1 AND (w->>'valuation')::
 SELECT t.ok((SELECT x->>'value_basis' = 'LIST' AND (x->>'value')::numeric = 40 * 480 FROM jsonb_array_elements(public.owner_stock_list(:WHB)) x WHERE x->>'sku_code' = 'TAK002'),
             'Stock page uses the same rule');
 
-\echo '── WhatsApp reminders + owner daily summary'
+\echo '── Reminders (phone) + owner daily summary (WhatsApp)'
 RESET ROLE;
 UPDATE users SET phone = '9876543210' WHERE id = :EMPA;
 UPDATE users SET phone = '9000000001' WHERE role = 'OWNER';
@@ -769,19 +769,19 @@ SELECT t.ok(app.wa_list(ARRAY['aaaa','bbbb','cccc','dddd'], 22) LIKE 'aaaa; bbbb
 -- clock-in reminder at 09:05 IST on a Monday for anyone not clocked in
 SELECT app.run_schedules('2026-11-16 03:35:00+00') AS rs \gset
 SELECT t.ok(:'rs'::jsonb ? 'clock_in' AND NOT (:'rs'::jsonb ? 'summary'), '09:05 Monday → clock-in reminders only');
-SELECT t.ok(EXISTS (SELECT 1 FROM notification_outbox WHERE dedupe_key = 'wa:clockin:2026-11-16:' || :EMPA
-                    AND payload->>'template' = 'clock_in_reminder' AND payload->'to' = '["919876543210"]'),
-            'WhatsApp clock-in reminder queued to the employee''s number');
-SELECT t.ok(EXISTS (SELECT 1 FROM notifications WHERE user_id = :EMPA AND kind = 'CLOCK_IN_REMINDER'), 'in-app reminder too');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM notification_outbox WHERE dedupe_key LIKE 'wa:clockin:2026-11-16:%'),
+            'clock-in reminders are NOT sent on WhatsApp (summary only)');
+SELECT t.ok(EXISTS (SELECT 1 FROM notifications WHERE user_id = :EMPA AND kind = 'CLOCK_IN_REMINDER'), 'clock-in reminder goes to the phone / bell');
 SELECT app.run_schedules('2026-11-16 03:40:00+00') \g /dev/null
-SELECT t.ok((SELECT count(*) FROM notification_outbox WHERE dedupe_key LIKE 'wa:clockin:2026-11-16:%' AND aggregate_id = :EMPA) = 1, 'sent once per day');
+SELECT t.ok((SELECT count(*) FROM notifications WHERE user_id = :EMPA AND kind = 'CLOCK_IN_REMINDER') = 1, 'sent once per day');
 SELECT t.ok(NOT (app.run_schedules('2026-11-22 03:35:00+00') ? 'clock_in'), 'no reminders on Sunday (not a working day)');
 SELECT t.ok(NOT (app.run_schedules('2026-11-16 02:00:00+00') ? 'clock_in'), 'nothing before 09:00');
 -- clock-out reminder only for people still clocked in
 INSERT INTO attendance(user_id, work_date, clock_in_at) VALUES (:EMPA, '2026-11-17', '2026-11-17 03:30:00+00');
 SELECT app.run_schedules('2026-11-17 13:05:00+00') AS rs2 \gset
-SELECT t.ok(:'rs2'::jsonb ? 'clock_out' AND EXISTS (SELECT 1 FROM notification_outbox WHERE dedupe_key = 'wa:clockout:2026-11-17:' || :EMPA
-            AND payload->'params'->>1 = '09:00 AM'), '18:35 → clock-out reminder with clock-in time');
+SELECT t.ok(:'rs2'::jsonb ? 'clock_out' AND EXISTS (SELECT 1 FROM notifications WHERE user_id = :EMPA AND kind = 'CLOCK_OUT_REMINDER' AND body LIKE '%09:00 AM%')
+            AND NOT EXISTS (SELECT 1 FROM notification_outbox WHERE dedupe_key LIKE 'wa:clockout:%'),
+            '18:35 → clock-out reminder with clock-in time, on the phone only (not WhatsApp)');
 UPDATE attendance SET clock_out_at = '2026-11-17 13:10:00+00' WHERE user_id = :EMPA AND work_date = '2026-11-17';
 -- owner summary at 20:00
 SELECT app.run_schedules('2026-11-17 14:31:00+00') AS rs3 \gset
